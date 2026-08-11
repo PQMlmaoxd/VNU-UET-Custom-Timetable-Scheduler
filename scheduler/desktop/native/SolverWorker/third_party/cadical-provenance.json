@@ -1,0 +1,12 @@
+{
+  "name": "CaDiCaL",
+  "version": "3.0.1",
+  "tag": "rel-3.0.1",
+  "commit": "c60730422e758ef1cebe7aeddf2dda31c996bf04",
+  "archive_url": "https://github.com/arminbiere/cadical/archive/c60730422e758ef1cebe7aeddf2dda31c996bf04.tar.gz",
+  "archive_sha256": "2dccd6ecc1878348dd70194d51df6b69006bf86439b5b3c395a5c5dd8863201e",
+  "license": "MIT",
+  "worker_option_defaults": {
+    "factor": 0
+  }
+}

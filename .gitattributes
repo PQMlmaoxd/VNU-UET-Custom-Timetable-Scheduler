@@ -1,0 +1,20 @@
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.exe binary
+*.dll binary
+*.pdb binary
+*.lib binary
+*.a binary
+*.so binary
+
+# Preserve upstream third-party source exactly; its original whitespace is not
+# part of the product source style checks.
+scheduler/desktop/native/SolverWorker/third_party/** -whitespace
+scheduler/desktop/native/FormalVerification/third_party/** -whitespace

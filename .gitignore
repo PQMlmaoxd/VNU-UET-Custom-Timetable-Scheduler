@@ -1,0 +1,53 @@
+# Node generated files
+node_modules/
+dist/
+
+# .NET and Visual Studio generated files
+.vs/
+**/bin/
+**/obj/
+*.user
+*.suo
+*.userosscache
+
+# IDE caches
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Native CMake generated files
+scheduler/desktop/native/SolverWorker/build/
+scheduler/desktop/native/SolverWorker/out/
+scheduler/desktop/native/FormalVerification/out/
+**/CMakeFiles/
+**/CMakeCache.txt
+**/cmake_install.cmake
+**/compile_commands.json
+
+# Test artifacts and local diagnostics
+TestResults/
+test-results/
+coverage/
+artifacts/
+*.trx
+*.coverage
+*.coveragexml
+
+# The real local workbook lives at repository root and must never be committed.
+# Do not use *.xlsx here: it would hide source directories named *.Xlsx.
+/*.xlsx
+# Signed timetable PDFs are local source data; keep fixtures under project test folders explicit.
+/*.pdf
+
+# Generated formal documents
+formal/spec/*.pdf
+# CaDiCaL generates these proxy makefiles during configure.
+scheduler/desktop/native/SolverWorker/third_party/cadical/makefile
+scheduler/desktop/native/SolverWorker/third_party/cadical/src/makefile
+*.log

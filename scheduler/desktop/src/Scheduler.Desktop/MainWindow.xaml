@@ -1,0 +1,82 @@
+<Window x:Class="Scheduler.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="VNU-UET Custom Timetable Scheduler"
+        MinWidth="960"
+         MinHeight="680"
+         Width="1440"
+         Height="960">
+  <Window.Resources>
+    <SolidColorBrush x:Key="NativeCanvasBrush" Color="#F2F4F7" />
+    <SolidColorBrush x:Key="NativeSurfaceBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="NativeTextBrush" Color="#101828" />
+    <SolidColorBrush x:Key="NativeBorderBrush" Color="#D0D5DD" />
+    <SolidColorBrush x:Key="NativeBrandBrush" Color="#173A5E" />
+    <Style TargetType="{x:Type Menu}">
+      <Setter Property="Background" Value="{DynamicResource NativeSurfaceBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource NativeTextBrush}" />
+    </Style>
+    <Style TargetType="{x:Type MenuItem}">
+      <Setter Property="Foreground" Value="{DynamicResource NativeTextBrush}" />
+    </Style>
+  </Window.Resources>
+  <Grid x:Name="RootGrid" Background="{DynamicResource NativeCanvasBrush}">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <Menu x:Name="NativeMenu" Grid.Row="0">
+       <MenuItem Header="_Trợ giúp">
+         <MenuItem Header="_Thông tin kỹ thuật" Click="OnDiagnosticsClick" />
+         <MenuItem Header="_Xuất gói hỗ trợ" Click="OnExportSupportBundleClick" />
+       </MenuItem>
+    </Menu>
+    <wv2:WebView2 x:Name="Browser" Grid.Row="1" />
+    <Border x:Name="StartupOverlay"
+            Grid.RowSpan="2"
+            Panel.ZIndex="10"
+            Background="{DynamicResource NativeCanvasBrush}">
+      <Grid>
+        <Border Width="420"
+                Padding="32"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="{DynamicResource NativeSurfaceBrush}"
+                BorderBrush="{DynamicResource NativeBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="8">
+          <StackPanel>
+             <TextBlock Text="VU"
+                       Width="40"
+                       Height="40"
+                       Padding="10,11,10,9"
+                       HorizontalAlignment="Left"
+                       Background="{DynamicResource NativeBrandBrush}"
+                       Foreground="White"
+                       FontWeight="SemiBold"
+                       TextAlignment="Center" />
+            <TextBlock x:Name="StartupTitle"
+                       Margin="0,20,0,6"
+                       Foreground="{DynamicResource NativeTextBrush}"
+                       FontSize="20"
+                       FontWeight="SemiBold"
+                        Text="Đang mở ứng dụng" />
+            <TextBlock x:Name="StartupDetail"
+                       Foreground="{DynamicResource NativeTextBrush}"
+                       Opacity="0.72"
+                       TextWrapping="Wrap"
+                        Text="Đang tải giao diện…" />
+            <Button x:Name="RetryButton"
+                    Width="120"
+                    Margin="0,20,0,0"
+                    HorizontalAlignment="Left"
+                    Click="OnRetryClick"
+                    Content="Thử lại"
+                    Visibility="Collapsed" />
+          </StackPanel>
+        </Border>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

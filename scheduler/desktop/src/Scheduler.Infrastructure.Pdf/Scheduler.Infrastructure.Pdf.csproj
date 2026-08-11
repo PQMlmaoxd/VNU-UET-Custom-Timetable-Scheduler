@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="PdfPig" />
+    <ProjectReference Include="../Scheduler.Domain/Scheduler.Domain.csproj" />
+    <ProjectReference Include="../Scheduler.Infrastructure.Timetable/Scheduler.Infrastructure.Timetable.csproj" />
+  </ItemGroup>
+</Project>

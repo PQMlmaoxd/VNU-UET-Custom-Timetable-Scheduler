@@ -1,0 +1,92 @@
+{
+  "format_version": 1,
+  "solver_backend": "personal_sat",
+  "problem_id": "personal-selector-branch-unsat",
+  "department": "SYNTHETIC",
+  "semester": "study-case",
+  "pair_count": 2,
+  "variable_count": 3,
+  "clause_count": 5,
+  "clause_breakdown": {
+    "at_least_one": 2,
+    "at_most_one": 1,
+    "cross_pair_conflicts": 2
+  },
+  "pairs": [
+    {
+      "pair_index": 0,
+      "course_code": "INT0001",
+      "course_name": "Course A",
+      "lecturer_name": "Prof A",
+      "candidate_var_ids": [
+        1
+      ]
+    },
+    {
+      "pair_index": 1,
+      "course_code": "INT0002",
+      "course_name": "Course B",
+      "lecturer_name": "Prof B",
+      "candidate_var_ids": [
+        2,
+        3
+      ]
+    }
+  ],
+  "variables": [
+    {
+      "var": 1,
+      "pair_index": 0,
+      "candidate_index": 0,
+      "course_code": "INT0001",
+      "course_name": "Course A",
+      "lecturer_name": "Prof A",
+      "lhp_code": "LHP-A1",
+      "session_ids": [
+        "s1"
+      ],
+      "session_timeslots": [
+        {
+          "session_id": "s1",
+          "timeslot": "Mon-Ca1"
+        }
+      ]
+    },
+    {
+      "var": 2,
+      "pair_index": 1,
+      "candidate_index": 0,
+      "course_code": "INT0002",
+      "course_name": "Course B",
+      "lecturer_name": "Prof B",
+      "lhp_code": "LHP-B1",
+      "session_ids": [
+        "s2"
+      ],
+      "session_timeslots": [
+        {
+          "session_id": "s2",
+          "timeslot": "Mon-Ca1"
+        }
+      ]
+    },
+    {
+      "var": 3,
+      "pair_index": 1,
+      "candidate_index": 1,
+      "course_code": "INT0002",
+      "course_name": "Course B",
+      "lecturer_name": "Prof B",
+      "lhp_code": "LHP-B2",
+      "session_ids": [
+        "s3"
+      ],
+      "session_timeslots": [
+        {
+          "session_id": "s3",
+          "timeslot": "Mon-Ca1"
+        }
+      ]
+    }
+  ]
+}

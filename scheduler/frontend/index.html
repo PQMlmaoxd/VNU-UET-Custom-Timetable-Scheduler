@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#173a5e" />
+    <title>VNU-UET Custom Timetable Scheduler</title>
+    <script>
+      (() => {
+        const preference = localStorage.getItem("scheduler.theme");
+        const valid = preference === "light" || preference === "dark" || preference === "system";
+        const selected = valid ? preference : "system";
+        const theme = selected === "system"
+          ? (typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+          : selected;
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

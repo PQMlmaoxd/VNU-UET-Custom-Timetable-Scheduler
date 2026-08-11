@@ -1,0 +1,11 @@
+c personal_sat fixed-workbook selector CNF export
+c pairs 2
+c clauses_at_least_one 2
+c clauses_at_most_one 0
+c clauses_conflict 1
+c var 1 pair=0 candidate=0 lhp=LHP-A1 sessions=s1
+c var 2 pair=1 candidate=0 lhp=LHP-B1 sessions=s2
+p cnf 2 3
+1 0
+2 0
+-1 -2 0

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" />
+    <PackageReference Include="PdfPig" />
+    <ProjectReference Include="../Scheduler.Application/Scheduler.Application.csproj" />
+    <ProjectReference Include="../Scheduler.Infrastructure.NativeSolver/Scheduler.Infrastructure.NativeSolver.csproj" />
+    <ProjectReference Include="../Scheduler.Infrastructure.FormalVerification/Scheduler.Infrastructure.FormalVerification.csproj" />
+    <ProjectReference Include="../Scheduler.Infrastructure.Pdf/Scheduler.Infrastructure.Pdf.csproj" />
+    <ProjectReference Include="../Scheduler.Infrastructure.Xlsx/Scheduler.Infrastructure.Xlsx.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,271 @@
+\documentclass{article}
+\usepackage{fontspec}
+\setmainfont{DejaVu Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\usepackage{amsmath, amssymb}
+\usepackage{geometry}
+\usepackage{float}
+\usepackage{url}
+\geometry{a4paper, margin=1in}
+\setlength{\emergencystretch}{3em}
+
+\newcommand{\Overlap}{\operatorname{Overlap}}
+\newcommand{\Atomic}{\operatorname{AtomicSlots}}
+\newcommand{\Conf}{\operatorname{Conf}}
+\newcommand{\Cost}{\operatorname{Cost}}
+
+\begin{document}
+
+\title{\textbf{A SAT Encoding for Fixed-Workbook Personal Timetable Selection}}
+\author{Formal Method Notes}
+\date{}
+\maketitle
+
+\section{Notation}
+
+\subsection*{Input Objects}
+\begin{itemize}
+    \item $\mathcal{S}$: the set of sessions extracted from the workbook. Each session corresponds to one workbook row.
+    \item $\mathcal{P} = \{1, \dots, m\}$: the set of user-selected teaching-team
+    requests. Each request is $(course\_code, teaching\_team\_key)$.
+    \item $\mathcal{C}_p$: the set of candidate LHPs for request $p \in \mathcal{P}$.
+    \item $\Sigma_{p,c} \subseteq \mathcal{S}$: the set of sessions that belong to candidate $c \in \mathcal{C}_p$.
+    \item $t(s)$: the fixed workbook timeslot of session $s$.
+    \item $r(s)$: the room associated with session $s$.
+    \item $k_{\max}$: the maximum number of solutions returned by the desktop command. The current default is $5$.
+\end{itemize}
+
+\subsection*{Time Domain}
+Each timeslot has the form $(day, period)$. Period values are interpreted through atomic teaching blocks:
+\begin{align*}
+\Atomic("1") &= \{1\}, & \Atomic("2") &= \{2\}, \\
+\Atomic("3") &= \{3\}, & \Atomic("4") &= \{4\}, \\
+\Atomic("1-2") &= \{1,2\}, & \Atomic("2-3") &= \{2,3\}, \\
+\Atomic("3-4") &= \{3,4\}, \\
+\Atomic(\text{Sáng}) &= \{1,2\}, & \Atomic(\text{Chiều}) &= \{3,4\}.
+\end{align*}
+
+Two timeslots overlap iff they occur on the same day and share at least one atomic block:
+\begin{equation}
+\Overlap(t_1, t_2) \iff day(t_1) = day(t_2) \wedge \bigl(\Atomic(period(t_1)) \cap \Atomic(period(t_2)) \neq \varnothing\bigr).
+\label{eq:overlap}
+\end{equation}
+
+\section{Problem Definition}
+
+The current system solves a \textbf{fixed-workbook personal timetable selection problem}. The workbook timetable is treated as immutable. The solver does not reschedule the institution-wide timetable. Instead, it selects a compatible personal timetable from existing LHP candidates.
+
+Given a set of user-selected teaching-team requests $(course\_code, teaching\_team\_key)$, the system must:
+\begin{enumerate}
+    \item identify all valid teaching-unit candidates for each selected request,
+    \item choose exactly one candidate teaching unit per selected request,
+    \item ensure that the chosen LHPs do not overlap in time,
+    \item enumerate up to $k_{\max}$ distinct feasible solutions, and
+    \item rank feasible solutions by movement cost.
+\end{enumerate}
+
+This formulation is intentionally narrower than a global timetabling problem and matches the current product semantics.
+
+\section{Decision Variables}
+
+For every request $p \in \mathcal{P}$ and every candidate $c \in \mathcal{C}_p$, we introduce a Boolean variable:
+\begin{equation}
+x_{p,c} = \text{True} \iff \text{candidate } c \text{ is selected for request } p.
+\label{eq:decision_var}
+\end{equation}
+
+The SAT model therefore represents a choice of one teaching-unit candidate per selected request.
+
+\section{Core SAT Constraints}
+
+\subsection{Exactly-One Candidate per Selected Request}
+
+For each selected request, at least one candidate must be chosen:
+\begin{equation}
+\forall p \in \mathcal{P}: \bigvee_{c \in \mathcal{C}_p} x_{p,c}.
+\label{eq:atleastone}
+\end{equation}
+
+For each selected request, at most one candidate may be chosen:
+\begin{equation}
+\forall p \in \mathcal{P},\; \forall c_1 < c_2 \in \mathcal{C}_p:
+(\neg x_{p,c_1} \vee \neg x_{p,c_2}).
+\label{eq:atmostone}
+\end{equation}
+
+Together, \eqref{eq:atleastone} and \eqref{eq:atmostone} enforce the exactly-one requirement.
+
+\subsection{Cross-Request Conflict Constraints}
+
+Two candidates from different selected requests are incompatible if either they reuse at least one session or any pair of their sessions overlaps in time.
+
+Formally, for candidates $c \in \mathcal{C}_p$ and $d \in \mathcal{C}_q$ with $p \neq q$:
+\begin{align}
+\Conf(c,d) \iff &\; \bigl(\Sigma_{p,c} \cap \Sigma_{q,d} \neq \varnothing\bigr) \\
+&\; \vee\; \exists s \in \Sigma_{p,c},\; s' \in \Sigma_{q,d}: \Overlap(t(s), t(s')).
+\label{eq:conflict_def}
+\end{align}
+
+Whenever $\Conf(c,d)$ holds, the two candidates cannot be simultaneously selected:
+\begin{equation}
+\forall p \neq q,\; \forall c \in \mathcal{C}_p,\; \forall d \in \mathcal{C}_q:
+\Conf(c,d) \Rightarrow (\neg x_{p,c} \vee \neg x_{q,d}).
+\label{eq:conflict_clause}
+\end{equation}
+
+These clauses are sufficient to eliminate all pairwise timetable conflicts between chosen LHPs.
+
+\section{Semantics of a SAT Model}
+
+A satisfying assignment is interpreted as a personal timetable candidate if and only if:
+\begin{itemize}
+    \item for every selected request $p$, exactly one variable $x_{p,c}$ is assigned \texttt{True}, and
+    \item no two chosen candidates violate the incompatibility clauses in \eqref{eq:conflict_clause}.
+\end{itemize}
+
+Thus, each SAT model corresponds to one feasible combination of LHP selections.
+
+\section{Top-$k$ Enumeration by Blocking Clauses}
+
+The solver enumerates multiple distinct solutions by repeatedly solving and then blocking the previous personal-timetable selection.
+
+For a satisfying assignment, let $M^+ = \{v_1, \dots, v_r\}$ be precisely the
+positive decision literals, with one selected candidate for every request in
+$\mathcal{P}$. To exclude this exact combination in subsequent iterations, the
+worker adds the blocking clause:
+\begin{equation}
+(\neg v_1 \vee \neg v_2 \vee \dots \vee \neg v_r).
+\label{eq:blocking_clause}
+\end{equation}
+
+By the exactly-one constraints, this is equivalent to blocking the complete
+personal-selection model while having length $|\mathcal{P}|$ rather than $N$.
+It also remains valid if a future encoding introduces auxiliary SAT variables:
+different values of auxiliary variables do not cause the same personal timetable
+to be returned twice.
+
+The procedure continues until one of the following conditions holds:
+\begin{itemize}
+    \item $k_{\max}$ feasible solutions have been collected,
+    \item the remaining formula becomes UNSAT, or
+    \item the global timeout is reached.
+\end{itemize}
+
+\section{Independent Personal-Timetable Validation}
+
+The SAT encoding is followed by an independent validator. This validator defines the hard correctness conditions for the personal timetable output.
+
+\subsection{Personal-Timetable Constraints (PT-1 to PT-7)}
+\begin{itemize}
+    \item \textbf{PT-1: Exactly one teaching unit per selected request.} Each requested $(course\_code, teaching\_team\_key)$ must produce exactly one chosen teaching unit.
+    \item \textbf{PT-2: Candidate membership.} The chosen teaching unit must belong to the candidate set of the requested teaching-team request.
+    \item \textbf{PT-3: Session-sequence consistency.} The returned session identifiers must exactly match the chosen candidate's canonical sequence, ordered by source row and then ordinal session identifier.
+    \item \textbf{PT-4: Timeslot consistency.} The reported session timeslots must match the resolved timeslots in the fixed workbook schedule.
+    \item \textbf{PT-5: No session reuse.} A session identifier cannot be reused across multiple selected teaching-team requests.
+    \item \textbf{PT-6: No overlap among selected LHPs.} The chosen personal timetable must be pairwise non-overlapping under \eqref{eq:overlap}.
+    \item \textbf{PT-7: No unexpected requests.} The output cannot contain a teaching-team request that was not explicitly selected by the user.
+\end{itemize}
+
+A personal timetable solution is considered valid only if all PT constraints hold.
+
+\section{Workbook-Integrity Constraints}
+
+In addition to personal-solution validation, the desktop application maintains a separate integrity layer for validating workbook-derived schedules. These constraints are denoted HC-1 to HC-6:
+\begin{itemize}
+    \item \textbf{HC-1: No physical room double-booking.}
+    \item \textbf{HC-2: No overlap for individual lecturers.}
+    \item \textbf{HC-3: No overlap for student cohorts.}
+    \item \textbf{HC-4: Respect external lecturer blocks.}
+    \item \textbf{HC-5: No internal LHP overlap for shared cohorts.}
+    \item \textbf{HC-6: Lab-compatible room assignment for lab-like sessions.}
+\end{itemize}
+
+Conceptually, the HC layer validates timetable integrity, whereas the PT layer validates the correctness of the personal selector output.
+
+\section{Soft Objective: Movement Cost Ranking}
+
+Once hard-feasible personal timetables have been found, solutions are ranked by movement cost.
+
+Consider the selected sessions on a fixed day, ordered chronologically. A transition contributes to the score only when two sessions are adjacent in atomic teaching blocks:
+\begin{equation}
+end(s_i) + 1 = start(s_{i+1}).
+\label{eq:adjacency}
+\end{equation}
+
+For two adjacent sessions in rooms $r_i$ and $r_{i+1}$, the transition cost is defined as:
+\begin{equation}
+\Cost(r_i, r_{i+1}) =
+\begin{cases}
+0, & \text{same room}, \\
+1, & \text{different rooms in the same building}, \\
+2, & \text{different buildings in the same movement zone}, \\
+3, & \text{different movement zones}.
+\end{cases}
+\label{eq:movement_cost}
+\end{equation}
+
+Special cases:
+\begin{itemize}
+    \item If either session is online, the transition cost is $0$.
+    \item If either session has no physical room, the transition cost is $0$.
+    \item If two sessions are not adjacent under \eqref{eq:adjacency}, no movement cost is added.
+\end{itemize}
+
+The total cost of a solution is therefore:
+\begin{equation}
+\text{MovementCost} = \sum_{\text{valid adjacent transitions}} \Cost(r_i, r_{i+1}).
+\end{equation}
+
+Solutions with lower movement cost are ranked ahead of solutions with higher cost.
+The cost is evaluated after SAT feasibility and ranks only the bounded set of
+solutions returned by enumeration. It is not optimized inside the CNF, so the
+first returned solution is not necessarily the global movement optimum.
+
+The room-building map used by the desktop implementation is:
+\begin{itemize}
+    \item buildings $A$ and $B$ map to zone $GD4$;
+    \item buildings $T$ and \text{GĐ3} map to zone $GD3$;
+    \item buildings $G2$, $G3$, $E3$, and $E5$ map to zone $GD2$;
+    \item rooms containing \text{ĐHKHTN} map to the separate \text{ĐHKHTN} zone;
+    \item an unmapped building name forms a zone with the same name.
+\end{itemize}
+
+\section{Encoding Complexity}
+
+Let $m_p = |\mathcal{C}_p|$ and let
+\begin{equation}
+N = \sum_{p \in \mathcal{P}} m_p
+\end{equation}
+be the total number of candidate teaching units across all selected requests.
+
+Then:
+\begin{itemize}
+    \item the at-least-one constraints contribute $|\mathcal{P}|$ clauses,
+    \item the at-most-one constraints contribute $\sum_p \binom{m_p}{2}$ clauses,
+    \item the cross-request conflict layer can contain $O(N^2)$ clauses in the worst case,
+    \item conflict discovery is implemented with indexes from session identifiers and
+    $(day, atomic\ period)$ buckets to candidate variables; its work is proportional
+    to the occupied buckets rather than an unconditional all-pairs scan,
+    \item each additional top-$k$ solution adds one blocking clause of the form \eqref{eq:blocking_clause}.
+\end{itemize}
+
+In practice, this formulation is substantially lighter than global timetable rescheduling because it only selects among fixed workbook candidates rather than searching over room-timeslot assignments for all sessions.
+
+\section{Implementation Traceability}
+
+The Windows desktop implementation corresponding to this specification is split across the following components:
+\begin{itemize}
+    \item candidate construction, SAT encoding, and movement-cost ranking:
+    \path{scheduler/desktop/src/Scheduler.Application/}
+    \item protocol v2 top-$k$ enumeration with exactly-one blocking groups:
+    \path{scheduler/desktop/native/SolverWorker/}
+    \item independent validation of HC and PT constraints:
+    \path{scheduler/desktop/src/Scheduler.Application/TimetableValidator.cs}
+\end{itemize}
+
+The C\# selector and validator under \texttt{scheduler/desktop} are the product
+implementation. Compatibility fixtures and the independent validator remain
+release evidence for the desktop implementation.
+
+\end{document}

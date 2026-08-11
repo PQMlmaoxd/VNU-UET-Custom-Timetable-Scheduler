@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net8.0": {
+      "PdfPig": {
+        "type": "Direct",
+        "requested": "[0.1.15, )",
+        "resolved": "0.1.15",
+        "contentHash": "Bf0NO4o2ZSVnemMyj21KDU1sfSgmamFC0pD4aAv19CDNXQsoO1Z6O99gNqpiK/XWWZ5d5i7JkQoT7PUBxEPz5g=="
+      },
+      "scheduler.domain": {
+        "type": "Project"
+      },
+      "scheduler.infrastructure.timetable": {
+        "type": "Project",
+        "dependencies": {
+          "Scheduler.Domain": "[1.0.0, )"
+        }
+      }
+    },
+    "net8.0/win-x64": {}
+  }
+}

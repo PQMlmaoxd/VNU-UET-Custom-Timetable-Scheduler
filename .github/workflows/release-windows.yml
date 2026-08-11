@@ -1,0 +1,271 @@
+name: Release Windows Desktop
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without the leading v, for example 1.0.0
+        required: true
+        type: string
+      tag:
+        description: Existing annotated Git tag to release, for example v1.0.0
+        required: true
+        type: string
+      webview2_installer_url:
+        description: Official Microsoft Evergreen Standalone Runtime URL
+        required: false
+        type: string
+      webview2_sha256:
+        description: SHA-256 of the WebView2 installer
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_SDK_VERSION: 9.0.312
+  NODE_VERSION: 24.12.0
+  INNO_SETUP_VERSION: 6.7.1
+  WEBVIEW2_URL: ${{ inputs.webview2_installer_url || vars.WEBVIEW2_INSTALLER_URL }}
+  WEBVIEW2_SHA256: ${{ inputs.webview2_sha256 || vars.WEBVIEW2_INSTALLER_SHA256 }}
+
+jobs:
+  release:
+    name: Build and publish Windows release
+    runs-on: windows-2022
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify public source snapshot
+        if: ${{ hashFiles('docs/release/SOURCE_SNAPSHOT.sha256') != '' }}
+        shell: bash
+        run: ./scheduler/desktop/scripts/verify-source-snapshot.sh
+
+      - name: Resolve release version
+        shell: powershell
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if ($env:EVENT_NAME -eq 'push') {
+              $tag = $env:REF_NAME
+              if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$') {
+                  throw "Release tag must match vX.Y.Z or vX.Y.Z-prerelease."
+              }
+              $version = $tag.Substring(1)
+          }
+          else {
+              $version = $env:INPUT_VERSION
+              if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$') {
+                  throw 'Manual release version must match X.Y.Z or X.Y.Z-prerelease.'
+              }
+              $tag = $env:INPUT_TAG
+              if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$') {
+                  throw 'Manual release tag must match vX.Y.Z or vX.Y.Z-prerelease.'
+              }
+              if ($tag.Substring(1) -ne $version) {
+                  throw 'Manual release tag and version must identify the same release.'
+              }
+          }
+
+          $tagType = (& git cat-file -t $tag).Trim()
+          if ($tagType -ne 'tag') {
+              throw "Release tag '$tag' must be an annotated tag."
+          }
+          $tagCommit = (& git rev-list -n 1 "$tag^{}").Trim()
+          $checkedOutCommit = (& git rev-parse HEAD).Trim()
+          if ($tagCommit -ne $checkedOutCommit) {
+              throw "Release tag '$tag' does not point to the checked-out commit."
+          }
+
+          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+          "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+          Write-Host "Preparing $tag"
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: scheduler/frontend/package-lock.json
+
+      - name: Install MSYS2 MinGW-w64 toolchain
+        uses: msys2/setup-msys2@40677d36a502eb2cf0fb808cc9dec31bf6152638 # v2.28.0
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-binutils
+
+      - name: Record native toolchain versions
+        shell: msys2 {0}
+        run: |
+          gcc --version
+          mingw32-make --version
+          objdump --version
+
+      - name: Build static SolverWorker
+        shell: msys2 {0}
+        run: ./scheduler/desktop/scripts/build-windows-solver-worker.sh
+
+      - name: Build optional CakeLPR checker
+        shell: msys2 {0}
+        run: ./scheduler/desktop/scripts/build-cake-lpr.sh
+
+      - name: Run locked release gate
+        shell: powershell
+        env:
+          SCHEDULER_RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
+        run: >-
+          ./scheduler/desktop/scripts/verify-windows-release.ps1
+          -SolverWorkerPath ./scheduler/desktop/native/SolverWorker/out/windows-x64/SolverWorker.exe
+          -ReleaseVersion $env:SCHEDULER_RELEASE_VERSION
+          -SkipExternalFixtureTests
+
+      - name: Download and verify WebView2 runtime
+        shell: powershell
+        env:
+          WEBVIEW2_URL: ${{ env.WEBVIEW2_URL }}
+          WEBVIEW2_SHA256: ${{ env.WEBVIEW2_SHA256 }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WEBVIEW2_URL) -or
+              [string]::IsNullOrWhiteSpace($env:WEBVIEW2_SHA256)) {
+              throw 'Set repository variables WEBVIEW2_INSTALLER_URL and WEBVIEW2_INSTALLER_SHA256, or provide both manual inputs.'
+          }
+
+          $sourceUri = [Uri]$env:WEBVIEW2_URL
+          if (-not $sourceUri.IsAbsoluteUri -or $sourceUri.Scheme -ne 'https' -or
+              $sourceUri.Host -notmatch '(^|\.)microsoft\.com$') {
+              throw 'WebView2 URL must use an official Microsoft HTTPS host.'
+          }
+          if ($env:WEBVIEW2_SHA256 -notmatch '^[a-fA-F0-9]{64}$') {
+              throw 'WEBVIEW2_INSTALLER_SHA256 must be a SHA-256 hex digest.'
+          }
+
+          $runtimePath = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebView2Setup.exe'
+          Invoke-WebRequest -Uri $env:WEBVIEW2_URL -OutFile $runtimePath
+          $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $runtimePath).Hash.ToLowerInvariant()
+          if ($actualHash -ne $env:WEBVIEW2_SHA256.ToLowerInvariant()) {
+              throw 'Downloaded WebView2 runtime SHA-256 did not match the configured value.'
+          }
+
+          $signature = Get-AuthenticodeSignature -FilePath $runtimePath
+          if ($signature.Status -ne 'Valid' -or
+              $null -eq $signature.SignerCertificate -or
+              $signature.SignerCertificate.Subject -notmatch 'Microsoft') {
+              throw 'WebView2 runtime must have a valid Microsoft Authenticode signature.'
+          }
+
+          "WEBVIEW2_PATH=$runtimePath" >> $env:GITHUB_ENV
+
+      - name: Install Inno Setup
+        shell: powershell
+        env:
+          INNO_SETUP_VERSION: ${{ env.INNO_SETUP_VERSION }}
+        run: |
+          choco install innosetup --version=$env:INNO_SETUP_VERSION --yes --no-progress --allow-downgrade
+          $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+          $isccCandidates = @(
+              (Join-Path $programFilesX86 'Inno Setup 6\ISCC.exe'),
+              (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe'),
+              (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
+              (Get-Command ISCC.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source)
+          )
+          $iscc = $isccCandidates |
+              Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path $_ -PathType Leaf) } |
+              Select-Object -First 1
+          if ([string]::IsNullOrWhiteSpace($iscc)) {
+              throw 'Inno Setup compiler was not found in the installed locations or PATH.'
+          }
+          Write-Host "Using Inno Setup compiler: $iscc"
+          "INNO_SETUP_PATH=$iscc" >> $env:GITHUB_ENV
+
+      - name: Build installer and run smoke test
+        shell: powershell
+        env:
+          RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
+          WEBVIEW2_URL: ${{ env.WEBVIEW2_URL }}
+          WEBVIEW2_SHA256: ${{ env.WEBVIEW2_SHA256 }}
+          WEBVIEW2_PATH: ${{ env.WEBVIEW2_PATH }}
+        run: >-
+          ./scheduler/desktop/scripts/build-installer.ps1
+          -SolverWorkerPath ./scheduler/desktop/native/SolverWorker/out/windows-x64/SolverWorker.exe
+          -Version $env:RELEASE_VERSION
+          -PublishPath ./scheduler/desktop/artifacts/windows-x64
+          -OutputPath ./scheduler/desktop/artifacts/installer
+          -InnoSetupCompilerPath $env:INNO_SETUP_PATH
+          -WebView2InstallerPath $env:WEBVIEW2_PATH
+          -WebView2Sha256 $env:WEBVIEW2_SHA256
+          -WebView2SourceUrl $env:WEBVIEW2_URL
+          -SkipFrontendBuild
+          -SkipPublish
+          -SmokeTest
+
+      - name: Package release assets
+        shell: powershell
+        env:
+          RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
+        run: >-
+          ./scheduler/desktop/scripts/package-release-assets.ps1
+          -Version $env:RELEASE_VERSION
+          -PublishPath ./scheduler/desktop/artifacts/windows-x64
+          -InstallerPath ./scheduler/desktop/artifacts/installer/VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-Setup.exe
+          -OutputPath ./scheduler/desktop/artifacts/release-assets
+
+      - name: Upload release assets as workflow artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scheduler-desktop-release-${{ env.RELEASE_VERSION }}
+          path: scheduler/desktop/artifacts/release-assets
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+          RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
+        run: |
+          $assets = @(Get-ChildItem -LiteralPath 'scheduler/desktop/artifacts/release-assets' -File | Select-Object -ExpandProperty FullName)
+          if ($assets.Count -eq 0) {
+              throw 'No release assets were produced.'
+          }
+           & gh release create $env:RELEASE_TAG `
+               --title "VNU-UET Custom Timetable Scheduler $env:RELEASE_VERSION" `
+               --verify-tag `
+               --generate-notes
+          if ($LASTEXITCODE -ne 0) {
+              throw 'GitHub release creation failed.'
+          }
+
+          foreach ($asset in $assets) {
+              & gh release upload $env:RELEASE_TAG $asset --clobber
+              if ($LASTEXITCODE -ne 0) {
+                  throw "GitHub release asset upload failed: $asset"
+              }
+          }
