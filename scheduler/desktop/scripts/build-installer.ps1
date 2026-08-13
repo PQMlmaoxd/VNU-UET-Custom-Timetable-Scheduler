@@ -196,6 +196,7 @@ $compilerArguments = @(
     "/DAppVersion=$Version"
     "/DSourceDir=$publishDirectory"
     "/DOutputDir=$outputDirectory"
+    "/DAppIconFile=$(Join-Path $publishDirectory 'app.ico')"
     "/DIncludeWebView2=$([int]($null -ne $runtime))"
 )
 

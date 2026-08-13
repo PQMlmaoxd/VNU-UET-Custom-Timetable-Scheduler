@@ -12,6 +12,10 @@
   #error OutputDir must be supplied by the build script.
 #endif
 
+#ifndef AppIconFile
+  #error AppIconFile must be supplied by the build script.
+#endif
+
 #ifndef IncludeWebView2
   #define IncludeWebView2 0
 #endif
@@ -28,7 +32,6 @@
 #define AppId "{{E0DFD8A4-3C3E-4DC7-BB99-7EA58D8E2A5F}"
 #define WebView2ClientId "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 #define WebView2InstallerName "MicrosoftEdgeWebView2Setup.exe"
-#define AppIconFile "{#SourceDir}\app.ico"
 
 [Setup]
 AppId={#AppId}
