@@ -154,4 +154,6 @@ export type DesiredAssignmentPayload = {
 
 export type StatusTone = "idle" | "busy" | "success" | "warning" | "error";
 
+export type SolveState = "idle" | "busy" | "done" | "error";
+
 export type StepId = 1 | 2 | 3;

@@ -1,15 +1,15 @@
 export const COPY = {
   product: {
-    eyebrow: "Lịch học",
-    title: "Thời khóa biểu cá nhân",
-    currentFile: "Thời khóa biểu hiện tại",
+    eyebrow: "VNU · UET",
+    title: "Lập kế hoạch thời khóa biểu",
+    currentFile: "Thời khóa biểu nguồn",
     noFile: "Chưa chọn",
   },
   steps: {
-    upload: "Thời khóa biểu",
+    upload: "Nạp dữ liệu",
     selection: "Chọn môn",
-    results: "Kết quả",
-    navigationLabel: "Các bước",
+    results: "Tìm lịch",
+    navigationLabel: "Quy trình lập lịch",
   },
   theme: {
     label: "Giao diện",
@@ -51,6 +51,7 @@ export const COPY = {
     coursePlaceholder: "Tìm theo mã hoặc tên môn…",
     courseResultsLabel: "Môn học phù hợp",
     noCourseResults: "Không tìm thấy môn phù hợp.",
+    rowLabel: (index: number) => `Môn học ${index}`,
     lecturerLabel: "Nhóm giảng dạy",
     lecturerPlaceholder: "Chọn nhóm giảng dạy",
     incomplete: "Chọn đủ môn và nhóm giảng dạy trước khi tiếp tục.",
