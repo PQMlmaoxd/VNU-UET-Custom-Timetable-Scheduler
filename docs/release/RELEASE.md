@@ -1,9 +1,9 @@
 # Release Guide
 
-The release pipeline produces a self-contained Windows x64 application, not a
-server deployment. The public source repository contains C#/.NET, React and
-the native SolverWorker source. Installers and compiled binaries are published
-as GitHub Release assets.
+The release pipeline produces a self-contained Windows x64 application and a
+standalone diagnostics CLI, not a server deployment. The public source repository
+contains C#/.NET, React and the native SolverWorker source. Installers and compiled
+binaries are published as GitHub Release assets.
 
 ## One-Time GitHub Setup
 
@@ -43,7 +43,8 @@ Windows 2022 environment:
 6. Build and run the fixture-independent .NET tests with warnings treated as errors.
 7. Run frontend unit tests, production build and Playwright E2E tests.
 8. Publish a self-contained `win-x64` directory and generate the SBOM/release manifest.
-9. Upload the verified publish directory as a short-lived Actions artifact.
+9. Publish and smoke-test the standalone `Scheduler.Diagnostics.exe` single-file CLI.
+10. Upload the verified desktop publish directory and diagnostics executable as short-lived Actions artifacts.
 
 The public CI and release workflow do not contain private timetable fixtures.
 They pass `-SkipExternalFixtureTests` to exclude the compatibility and
@@ -86,13 +87,14 @@ versions. It then:
 
 1. Verifies the source snapshot and builds the native worker.
 2. Runs the complete locked CI/release gate with the same version.
-3. Downloads and verifies the configured WebView2 runtime.
-4. Installs and version-checks Inno Setup 6.7.1.
-5. Builds the installer and runs silent install, worker and uninstall smoke tests.
-6. Creates the self-contained ZIP and installer. The release manifest, SBOM and
-   third-party notices remain inside the published tree and ZIP.
-7. Creates the GitHub Release and uploads only the installer and ZIP using
-   `GITHUB_TOKEN`; GitHub also provides source-code ZIP and tar archives.
+3. Publishes and smoke-tests the standalone diagnostics CLI after the release gate.
+4. Downloads and verifies the configured WebView2 runtime.
+5. Installs and version-checks Inno Setup 6.7.1.
+6. Builds the installer and runs silent install, worker and uninstall smoke tests.
+7. Creates the self-contained ZIP, installer, and diagnostics executable. The release manifest, SBOM and
+    third-party notices remain inside the published tree and ZIP.
+8. Creates the GitHub Release and uploads all three product assets using
+    `GITHUB_TOKEN`; GitHub also provides source-code ZIP and tar archives.
 
 The release job fails intentionally when the WebView2 variables are missing,
 when any version/hash check fails, when tests fail, or when the installer smoke
@@ -114,6 +116,13 @@ The GitHub Release contains these uploaded assets:
 
 - `VNU-UET-Custom-Timetable-Scheduler-<version>-Setup.exe`: per-user Inno Setup installer.
 - `VNU-UET-Custom-Timetable-Scheduler-<version>-win-x64.zip`: self-contained publish directory.
+- `VNU-UET-Custom-Timetable-Scheduler-<version>-Diagnostics-win-x64.exe`: self-contained, single-file diagnostics CLI.
+
+The diagnostics asset is built from `Scheduler.Diagnostics`, smoke-tested with
+`help`, `version`, `self-test`, and JSON `doctor`, and is copied only when the
+input file is named exactly `Scheduler.Diagnostics.exe`. Its CLI commands and
+privacy defaults are documented in
+`scheduler/desktop/src/Scheduler.Diagnostics/README.md`.
 
 GitHub additionally provides `Source code (zip)` and `Source code (tar.gz)` for
 the release tag. The ZIP itself retains `release-manifest.json`, `sbom.cdx.json`

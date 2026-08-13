@@ -32,6 +32,12 @@ solutions returned by SAT; it does not claim global movement optimality.
   applies PT-1 through PT-7 before exposing a solution.
 - `Scheduler.Desktop` provides a Windows WPF/WebView2 host and a versioned, local
   request/response bridge. The React bundle uses this bridge as its product transport.
+- `Scheduler.Diagnostics` is a separate, privacy-safe managed console executable. It
+  checks the isolated worker, packaged application structure/manifest, and XLSX/PDF input
+  without launching the UI. Its commands, privacy defaults, and Windows single-file
+  publish script are documented in `src/Scheduler.Diagnostics/README.md`. The tagged
+  release publishes it as the third asset
+  `VNU-UET-Custom-Timetable-Scheduler-<version>-Diagnostics-win-x64.exe`.
 - The host and React UI share `system`, `light`, and `dark` theme preferences. The
   choice is stored locally, applied before the document loads, and synchronizes the
   WPF menu, startup shell, and supported Windows title bar.
@@ -92,6 +98,18 @@ dotnet build Scheduler.sln --configuration Release --no-restore
 dotnet test Scheduler.sln --configuration Release --no-restore
 dotnet run --project src/Scheduler.Desktop -- --web-root ..\frontend\dist
 ```
+
+To publish and smoke-test only the standalone diagnostics CLI, without changing the
+desktop release package, run:
+
+```powershell
+.\scripts\publish-windows-diagnostics.ps1
+```
+
+The tagged release workflow runs this command after the release gate. Release
+packaging then requires the resulting exact file
+`artifacts/diagnostics-windows-x64/Scheduler.Diagnostics.exe` and copies it to the
+product-qualified diagnostics asset name above.
 
 The last command is the Debug development host. `--web-root` and
 `SCHEDULER_WEB_ROOT` are unavailable in Release builds; release packaging must copy the

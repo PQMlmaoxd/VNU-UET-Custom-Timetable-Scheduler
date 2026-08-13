@@ -107,11 +107,31 @@ jobs:
           -ReleaseVersion $env:SCHEDULER_RELEASE_VERSION
           -SkipExternalFixtureTests
 
+      - name: Publish and smoke-test standalone diagnostics
+        shell: powershell
+        env:
+          RELEASE_VERSION: ${{ env.CI_RELEASE_VERSION }}
+        run: >-
+          ./scheduler/desktop/scripts/publish-windows-diagnostics.ps1
+          -Version $env:RELEASE_VERSION
+          -OutputPath ./scheduler/desktop/artifacts/diagnostics-windows-x64
+          -WorkerPath ./scheduler/desktop/native/SolverWorker/out/windows-x64/SolverWorker.exe
+          -AppPath ./scheduler/desktop/artifacts/windows-x64
+
       - name: Upload verified publish directory
         if: success()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: scheduler-desktop-ci-${{ github.run_number }}
           path: scheduler/desktop/artifacts/windows-x64
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload smoke-tested diagnostics executable
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scheduler-diagnostics-ci-${{ github.run_number }}
+          path: scheduler/desktop/artifacts/diagnostics-windows-x64/Scheduler.Diagnostics.exe
           if-no-files-found: error
           retention-days: 14

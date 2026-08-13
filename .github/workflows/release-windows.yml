@@ -146,6 +146,17 @@ jobs:
           -ReleaseVersion $env:SCHEDULER_RELEASE_VERSION
           -SkipExternalFixtureTests
 
+      - name: Publish and smoke-test standalone diagnostics
+        shell: powershell
+        env:
+          RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
+        run: >-
+          ./scheduler/desktop/scripts/publish-windows-diagnostics.ps1
+          -Version $env:RELEASE_VERSION
+          -OutputPath ./scheduler/desktop/artifacts/diagnostics-windows-x64
+          -WorkerPath ./scheduler/desktop/native/SolverWorker/out/windows-x64/SolverWorker.exe
+          -AppPath ./scheduler/desktop/artifacts/windows-x64
+
       - name: Download and verify WebView2 runtime
         shell: powershell
         env:
@@ -234,6 +245,7 @@ jobs:
           -Version $env:RELEASE_VERSION
           -PublishPath ./scheduler/desktop/artifacts/windows-x64
           -InstallerPath ./scheduler/desktop/artifacts/installer/VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-Setup.exe
+          -DiagnosticsPath ./scheduler/desktop/artifacts/diagnostics-windows-x64/Scheduler.Diagnostics.exe
           -OutputPath ./scheduler/desktop/artifacts/release-assets
 
       - name: Upload release assets as workflow artifact

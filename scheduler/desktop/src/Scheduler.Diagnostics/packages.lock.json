@@ -1,0 +1,73 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net8.0": {
+      "DocumentFormat.OpenXml.Framework": {
+        "type": "Transitive",
+        "resolved": "3.3.0",
+        "contentHash": "R5CLzEoeyr7XDB7g3NTxRobcU19agaxVAhGZm+fZUShJGiU4bw8oUgnA2BNFepigJckfFMayOBMAbV3kDXNInA==",
+        "dependencies": {
+          "System.IO.Packaging": "8.0.1"
+        }
+      },
+      "System.IO.Packaging": {
+        "type": "Transitive",
+        "resolved": "8.0.1",
+        "contentHash": "KYkIOAvPexQOLDxPO2g0BVoWInnQhPpkFzRqvNrNrMhVT6kqhVr0zEb6KCHlptLFukxnZrjuMVAnxK7pOGUYrw=="
+      },
+      "scheduler.application": {
+        "type": "Project",
+        "dependencies": {
+          "Scheduler.Domain": "[1.0.0, )"
+        }
+      },
+      "scheduler.domain": {
+        "type": "Project"
+      },
+      "scheduler.infrastructure.nativesolver": {
+        "type": "Project",
+        "dependencies": {
+          "Scheduler.Application": "[1.0.0, )"
+        }
+      },
+      "scheduler.infrastructure.pdf": {
+        "type": "Project",
+        "dependencies": {
+          "PdfPig": "[0.1.15, )",
+          "Scheduler.Domain": "[1.0.0, )",
+          "Scheduler.Infrastructure.Timetable": "[1.0.0, )"
+        }
+      },
+      "scheduler.infrastructure.timetable": {
+        "type": "Project",
+        "dependencies": {
+          "Scheduler.Domain": "[1.0.0, )"
+        }
+      },
+      "scheduler.infrastructure.xlsx": {
+        "type": "Project",
+        "dependencies": {
+          "DocumentFormat.OpenXml": "[3.3.0, )",
+          "Scheduler.Domain": "[1.0.0, )",
+          "Scheduler.Infrastructure.Timetable": "[1.0.0, )"
+        }
+      },
+      "DocumentFormat.OpenXml": {
+        "type": "CentralTransitive",
+        "requested": "[3.3.0, )",
+        "resolved": "3.3.0",
+        "contentHash": "JogRPJNiE6kKvbuCqVRX691pPWeGMqdQgjrUwRYkdpfkMmtElfqAgcRR73geYj7OtBeEpstldZXXzJw27LUI9w==",
+        "dependencies": {
+          "DocumentFormat.OpenXml.Framework": "3.3.0"
+        }
+      },
+      "PdfPig": {
+        "type": "CentralTransitive",
+        "requested": "[0.1.15, )",
+        "resolved": "0.1.15",
+        "contentHash": "Bf0NO4o2ZSVnemMyj21KDU1sfSgmamFC0pD4aAv19CDNXQsoO1Z6O99gNqpiK/XWWZ5d5i7JkQoT7PUBxEPz5g=="
+      }
+    },
+    "net8.0/win-x64": {}
+  }
+}

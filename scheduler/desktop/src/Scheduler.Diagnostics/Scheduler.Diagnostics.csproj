@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <AssemblyName>Scheduler.Diagnostics</AssemblyName>
+    <RootNamespace>Scheduler.Diagnostics</RootNamespace>
+    <Version>0.1.0-dev</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Scheduler.Infrastructure.NativeSolver/Scheduler.Infrastructure.NativeSolver.csproj" />
+    <ProjectReference Include="../Scheduler.Infrastructure.Pdf/Scheduler.Infrastructure.Pdf.csproj" />
+    <ProjectReference Include="../Scheduler.Infrastructure.Xlsx/Scheduler.Infrastructure.Xlsx.csproj" />
+  </ItemGroup>
+</Project>

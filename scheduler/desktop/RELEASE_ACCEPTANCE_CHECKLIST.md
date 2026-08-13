@@ -11,6 +11,8 @@ is unverified; record the blocker and its owner instead.
       assembly, installer filename, release manifest, and SBOM metadata.
 - [ ] The exact `SolverWorker.exe` used for the release passed `--version`,
       `--self-test`, and `--protocol-self-test`.
+- [ ] The standalone `Scheduler.Diagnostics.exe` passed its publish smoke tests and
+      is recorded under the exact product-qualified diagnostics asset name.
 - [ ] CaDiCaL source provenance remains `rel-3.0.1`, commit
       `c60730422e758ef1cebe7aeddf2dda31c996bf04`; its notice and license are in
       the published directory and installer.
@@ -53,6 +55,8 @@ output and artifact hashes with the release record, never in the support ZIP.
       `web/index.html`, `release-manifest.json`, `THIRD_PARTY_NOTICES.md`, and
       `sbom.cdx.json`.
 - [ ] Installer silent install/uninstall smoke test passed.
+- [ ] Diagnostics `help`, `version`, `self-test`, and JSON `doctor` smoke tests passed;
+       the CLI asset is self-contained `win-x64` output.
 
 ## 3. Clean-Machine Installation
 
