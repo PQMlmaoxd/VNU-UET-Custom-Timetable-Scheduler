@@ -39,7 +39,7 @@ function Get-PortableRelativePath {
 
 $desktopRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $publishDirectory = (Resolve-Path $PublishPath).Path
-foreach ($relativePath in @("Scheduler.Desktop.exe", "Scheduler.Desktop.dll", "SolverWorker.exe", "web\index.html", "sbom.cdx.json")) {
+foreach ($relativePath in @("Scheduler.Desktop.exe", "Scheduler.Desktop.dll", "SolverWorker.exe", "app.ico", "web\index.html", "sbom.cdx.json")) {
     if (-not (Test-Path (Join-Path $publishDirectory $relativePath) -PathType Leaf)) {
         throw "Publish directory is missing required release metadata input: $relativePath"
     }

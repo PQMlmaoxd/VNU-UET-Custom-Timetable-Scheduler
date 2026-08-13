@@ -36,11 +36,14 @@ solutions returned by SAT; it does not claim global movement optimality.
   checks the isolated worker, packaged application structure/manifest, and XLSX/PDF input
   without launching the UI. Its commands, privacy defaults, and Windows single-file
   publish script are documented in `src/Scheduler.Diagnostics/README.md`. The tagged
-  release publishes it as the third asset
+  release publishes it as a separate diagnostics asset
   `VNU-UET-Custom-Timetable-Scheduler-<version>-Diagnostics-win-x64.exe`.
 - The host and React UI share `system`, `light`, and `dark` theme preferences. The
   choice is stored locally, applied before the document loads, and synchronizes the
   WPF menu, startup shell, and supported Windows title bar.
+- Product branding is tracked under `../branding`. The landscape logo is used by
+  the React and native startup surfaces, while the padded multi-resolution
+  `app.ico` is embedded in the Windows executables and used by the installer.
 - Startup shows a native loading shell immediately. It remains visible until React
   confirms `desktop_ready`; navigation failures, WebView process failures, and a
   12-second readiness timeout show a retry action instead of a blank window.
@@ -180,7 +183,7 @@ Runtime and Inno Setup 6 installed:
 ```powershell
 .\scripts\build-installer.ps1 `
   -SolverWorkerPath .\native\SolverWorker\out\windows-x64\SolverWorker.exe `
-  -Version 0.1.0 `
+  -Version 1.0.0 `
   -SmokeTest
 ```
 
@@ -197,7 +200,7 @@ records its provenance in `release-manifest.json`:
 ```powershell
 .\scripts\build-installer.ps1 `
   -SolverWorkerPath .\native\SolverWorker\out\windows-x64\SolverWorker.exe `
-  -Version 0.1.0 `
+  -Version 1.0.0 `
   -WebView2InstallerPath C:\release-inputs\MicrosoftEdgeWebView2Setup.exe `
   -WebView2Sha256 <pinned-sha256> `
   -WebView2SourceUrl https://developer.microsoft.com/microsoft-edge/webview2/ `

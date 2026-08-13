@@ -5,8 +5,14 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <AssemblyName>Scheduler.Diagnostics</AssemblyName>
     <RootNamespace>Scheduler.Diagnostics</RootNamespace>
-    <Version>0.1.0-dev</Version>
+    <Version>1.0.0-dev</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <Company>VNU-UET Custom Timetable Scheduler</Company>
+    <Product>VNU-UET Custom Timetable Scheduler Diagnostics</Product>
+    <Title>VNU-UET Custom Timetable Scheduler Diagnostics</Title>
+    <Description>Offline diagnostics for the Windows timetable scheduler.</Description>
+    <Copyright>Copyright (c) VNU-UET Custom Timetable Scheduler contributors.</Copyright>
   </PropertyGroup>
 
   <ItemGroup>

@@ -56,6 +56,10 @@ jobs:
         shell: bash
         run: ./scheduler/desktop/scripts/verify-source-snapshot.sh
 
+      - name: Verify branding assets
+        shell: powershell
+        run: ./scheduler/desktop/scripts/verify-branding-assets.ps1
+
       - name: Resolve release version
         shell: powershell
         env:
@@ -267,17 +271,63 @@ jobs:
           if ($assets.Count -eq 0) {
               throw 'No release assets were produced.'
           }
-           & gh release create $env:RELEASE_TAG `
-               --title "VNU-UET Custom Timetable Scheduler $env:RELEASE_VERSION" `
-               --verify-tag `
-               --generate-notes
+
+          $expectedNames = @(
+              "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-Setup.exe"
+              "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-win-x64.zip"
+              "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-Diagnostics-win-x64.exe"
+              "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-SHA256SUMS.txt"
+          ) | Sort-Object
+          $localNames = @($assets | ForEach-Object { [System.IO.Path]::GetFileName($_) } | Sort-Object)
+          if (($expectedNames -join "`n") -ne ($localNames -join "`n")) {
+              throw "Local release asset set mismatch. Expected: $($expectedNames -join ', '); actual: $($localNames -join ', ')."
+          }
+
+          $checksumFiles = @($assets | Where-Object {
+              [System.IO.Path]::GetFileName($_) -eq "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-SHA256SUMS.txt"
+          })
+          if ($checksumFiles.Count -ne 1) {
+              throw 'Exactly one release checksum file is required.'
+          }
+          $expectedChecksums = @($assets | Where-Object {
+              [System.IO.Path]::GetFileName($_) -ne "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-SHA256SUMS.txt"
+          } | Sort-Object | ForEach-Object {
+              "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash.ToLowerInvariant(), [System.IO.Path]::GetFileName($_)
+          })
+          $actualChecksums = @(Get-Content -LiteralPath $checksumFiles[0])
+          if (($expectedChecksums -join "`n") -ne ($actualChecksums -join "`n")) {
+              throw 'Release checksum file does not match the generated release assets.'
+          }
+
+          & gh release create $env:RELEASE_TAG `
+              --title "VNU-UET Custom Timetable Scheduler $env:RELEASE_VERSION" `
+              --verify-tag `
+              --draft `
+              --generate-notes
           if ($LASTEXITCODE -ne 0) {
               throw 'GitHub release creation failed.'
           }
 
           foreach ($asset in $assets) {
-              & gh release upload $env:RELEASE_TAG $asset --clobber
+              & gh release upload $env:RELEASE_TAG $asset
               if ($LASTEXITCODE -ne 0) {
                   throw "GitHub release asset upload failed: $asset"
               }
+          }
+
+          $releaseJson = & gh release view $env:RELEASE_TAG --json isDraft,tagName,targetCommitish,assets
+          if ($LASTEXITCODE -ne 0) {
+              throw 'GitHub release verification failed.'
+          }
+          $release = $releaseJson | ConvertFrom-Json
+          if (-not $release.isDraft -or $release.tagName -ne $env:RELEASE_TAG) {
+              throw 'Draft release verification returned unexpected metadata.'
+          }
+          $actualNames = @($release.assets | Select-Object -ExpandProperty name | Sort-Object)
+          if (($expectedNames -join "`n") -ne ($actualNames -join "`n")) {
+              throw "Release asset set mismatch. Expected: $($expectedNames -join ', '); actual: $($actualNames -join ', ')."
+          }
+          & gh release edit $env:RELEASE_TAG --draft=false
+          if ($LASTEXITCODE -ne 0) {
+              throw 'Publishing the verified draft release failed.'
           }

@@ -61,7 +61,7 @@ The script smoke-tests `help`, the requested `version`, `self-test`, and version
 JSON `doctor` output. In the release workflow it also runs the CLI against the
 just-built worker and desktop publish directory. Running it locally creates only the
 standalone diagnostics directory. The tagged release workflow runs it after the release gate, then
-`package-release-assets.ps1` copies the exact executable into the third release asset:
+`package-release-assets.ps1` copies the exact executable into the release assets:
 `VNU-UET-Custom-Timetable-Scheduler-<version>-Diagnostics-win-x64.exe`.
 
 To exercise the same packaging handoff locally after producing the desktop publish
@@ -69,9 +69,9 @@ directory and installer, pass the executable path, not its containing directory:
 
 ```powershell
 .\scripts\package-release-assets.ps1 `
-  -Version 0.1.2 `
+  -Version 1.0.0 `
   -PublishPath .\artifacts\windows-x64 `
-  -InstallerPath .\artifacts\installer\VNU-UET-Custom-Timetable-Scheduler-0.1.2-Setup.exe `
+  -InstallerPath .\artifacts\installer\VNU-UET-Custom-Timetable-Scheduler-1.0.0-Setup.exe `
   -DiagnosticsPath .\artifacts\diagnostics-windows-x64\Scheduler.Diagnostics.exe
 ```
 

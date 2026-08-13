@@ -14,6 +14,7 @@ public sealed class AppDiagnosticsTests : IDisposable
         File.WriteAllText(Path.Combine(_directory, "Scheduler.Desktop.exe"), "desktop");
         File.WriteAllText(Path.Combine(_directory, "Scheduler.Desktop.dll"), "desktop-dll");
         File.WriteAllText(Path.Combine(_directory, "SolverWorker.exe"), "worker");
+        File.WriteAllText(Path.Combine(_directory, "app.ico"), "icon");
         File.WriteAllText(Path.Combine(_directory, "web", "index.html"), "<html></html>");
         WriteManifest();
     }
@@ -84,6 +85,7 @@ public sealed class AppDiagnosticsTests : IDisposable
             ["Scheduler.Desktop.exe"] = Sha256(Path.Combine(_directory, "Scheduler.Desktop.exe")),
             ["Scheduler.Desktop.dll"] = Sha256(Path.Combine(_directory, "Scheduler.Desktop.dll")),
             ["SolverWorker.exe"] = Sha256(Path.Combine(_directory, "SolverWorker.exe")),
+            ["app.ico"] = Sha256(Path.Combine(_directory, "app.ico")),
             ["web/index.html"] = Sha256(Path.Combine(_directory, "web", "index.html")),
         };
         var manifest = new Dictionary<string, object?>

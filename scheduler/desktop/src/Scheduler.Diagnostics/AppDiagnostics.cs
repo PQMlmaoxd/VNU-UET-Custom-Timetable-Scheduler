@@ -12,6 +12,7 @@ internal static class AppDiagnostics
     [
         "Scheduler.Desktop.dll",
         "SolverWorker.exe",
+        "app.ico",
         "web/index.html",
     ];
 

@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="VNU-UET Custom Timetable Scheduler"
+        Icon="/Scheduler.Desktop;component/Assets/app.ico"
         MinWidth="960"
          MinHeight="680"
          Width="1440"
@@ -47,15 +48,11 @@
                 BorderThickness="1"
                 CornerRadius="8">
           <StackPanel>
-             <TextBlock Text="VU"
-                       Width="40"
-                       Height="40"
-                       Padding="10,11,10,9"
-                       HorizontalAlignment="Left"
-                       Background="{DynamicResource NativeBrandBrush}"
-                       Foreground="White"
-                       FontWeight="SemiBold"
-                       TextAlignment="Center" />
+            <Image Source="/Scheduler.Desktop;component/Assets/logo.png"
+                   Width="84"
+                   Height="64"
+                   HorizontalAlignment="Left"
+                   Stretch="Uniform" />
             <TextBlock x:Name="StartupTitle"
                        Margin="0,20,0,6"
                        Foreground="{DynamicResource NativeTextBrush}"

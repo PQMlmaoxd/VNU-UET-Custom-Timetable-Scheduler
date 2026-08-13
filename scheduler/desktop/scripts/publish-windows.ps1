@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$SolverWorkerPath,
     [ValidatePattern("^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$")]
-    [string]$Version = "0.1.0-dev",
+    [string]$Version = "1.0.0-dev",
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
     [string]$WebRoot,
@@ -62,6 +62,11 @@ if ($webIndexContent -match '(?i)(?:src|href)="/app/') {
     throw "Web bundle contains /app/-absolute assets and would render blank in the desktop host. Rebuild with Vite base './'."
 }
 
+$brandingIcon = Join-Path $desktopRoot "..\branding\generated\app.ico"
+if (-not (Test-Path $brandingIcon -PathType Leaf)) {
+    throw "Branding app.ico was not found: $brandingIcon"
+}
+
 Remove-Item -Recurse -Force $OutputPath -ErrorAction SilentlyContinue
 & dotnet publish (Join-Path $desktopRoot "src\Scheduler.Desktop\Scheduler.Desktop.csproj") `
     --configuration $Configuration `
@@ -73,6 +78,7 @@ if ($LASTEXITCODE -ne 0) { throw "Desktop publish failed." }
 
 Copy-Item -Recurse -Force $web (Join-Path $OutputPath "web")
 Copy-Item -Force $worker (Join-Path $OutputPath "SolverWorker.exe")
+Copy-Item -Force $brandingIcon (Join-Path $OutputPath "app.ico")
 $packagedWorker = Join-Path $OutputPath "SolverWorker.exe"
 & $packagedWorker --version
 if ($LASTEXITCODE -ne 0) { throw "Packaged SolverWorker version check failed." }

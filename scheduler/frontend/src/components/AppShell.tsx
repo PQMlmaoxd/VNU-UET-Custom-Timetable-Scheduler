@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { COPY } from "../copy";
+import logoUrl from "../assets/logo.png";
 import type { ThemePreference } from "../theme";
 import { Notice, type AppStatus } from "./Notice";
 
@@ -24,7 +25,14 @@ export function AppShell({
       <a className="skip-link" href="#workspace">{COPY.accessibility.skipNavigation}</a>
       <header className="app-header" aria-labelledby="app-title">
         <div className="product-title">
-          <span className="product-mark" aria-hidden="true">UET</span>
+          <img
+            className="product-mark"
+            src={logoUrl}
+            alt=""
+            width={42}
+            height={32}
+            aria-hidden="true"
+          />
           <div>
             <p className="eyebrow">{COPY.product.eyebrow}</p>
             <h1 id="app-title">{COPY.product.title}</h1>

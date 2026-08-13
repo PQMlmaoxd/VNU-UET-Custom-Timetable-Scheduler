@@ -91,10 +91,10 @@ versions. It then:
 4. Downloads and verifies the configured WebView2 runtime.
 5. Installs and version-checks Inno Setup 6.7.1.
 6. Builds the installer and runs silent install, worker and uninstall smoke tests.
-7. Creates the self-contained ZIP, installer, and diagnostics executable. The release manifest, SBOM and
-    third-party notices remain inside the published tree and ZIP.
-8. Creates the GitHub Release and uploads all three product assets using
-    `GITHUB_TOKEN`; GitHub also provides source-code ZIP and tar archives.
+7. Creates the self-contained ZIP, installer, diagnostics executable, and SHA-256 checksum file. The
+     release manifest, SBOM and third-party notices remain inside the published tree and ZIP.
+8. Creates a draft GitHub Release, uploads and verifies all four product assets, then publishes the draft
+     using `GITHUB_TOKEN`; GitHub also provides source-code ZIP and tar archives.
 
 The release job fails intentionally when the WebView2 variables are missing,
 when any version/hash check fails, when tests fail, or when the installer smoke
@@ -117,6 +117,7 @@ The GitHub Release contains these uploaded assets:
 - `VNU-UET-Custom-Timetable-Scheduler-<version>-Setup.exe`: per-user Inno Setup installer.
 - `VNU-UET-Custom-Timetable-Scheduler-<version>-win-x64.zip`: self-contained publish directory.
 - `VNU-UET-Custom-Timetable-Scheduler-<version>-Diagnostics-win-x64.exe`: self-contained, single-file diagnostics CLI.
+- `VNU-UET-Custom-Timetable-Scheduler-<version>-SHA256SUMS.txt`: SHA-256 values for the installer, ZIP, and diagnostics binary.
 
 The diagnostics asset is built from `Scheduler.Diagnostics`, smoke-tested with
 `help`, `version`, `self-test`, and JSON `doctor`, and is copied only when the
@@ -134,6 +135,7 @@ CI cannot replace these release-owner checks when publishing a production-labell
 installer or a formal-verification claim:
 
 - clean Windows machine without a preinstalled WebView2 Runtime;
+- logo/icon verification in the WPF window, taskbar, installer wizard, shortcuts and Apps & Features;
 - interactive WebView2 startup, upload, solve and cancellation behavior;
 - Authenticode signing and verification of the installer and binaries, if signed
   distribution is desired;

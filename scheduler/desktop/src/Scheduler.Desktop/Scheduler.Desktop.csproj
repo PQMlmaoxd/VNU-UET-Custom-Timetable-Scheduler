@@ -3,9 +3,17 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <Company>VNU-UET Custom Timetable Scheduler</Company>
+    <Product>VNU-UET Custom Timetable Scheduler</Product>
+    <Title>VNU-UET Custom Timetable Scheduler</Title>
+    <Description>Offline personal timetable selection for Windows.</Description>
+    <Copyright>Copyright (c) VNU-UET Custom Timetable Scheduler contributors.</Copyright>
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\logo.png" />
     <PackageReference Include="Microsoft.Web.WebView2" />
     <PackageReference Include="PdfPig" />
     <ProjectReference Include="../Scheduler.Application/Scheduler.Application.csproj" />

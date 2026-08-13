@@ -141,6 +141,8 @@ describe("App", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: COPY.product.title })).toBeInTheDocument();
+    expect(document.querySelector("img.product-mark")).toHaveAttribute("width", "42");
+    expect(document.querySelector("img.product-mark")).toHaveAttribute("height", "32");
     expect(screen.getByLabelText(COPY.upload.inputLabel)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: COPY.upload.readButton })).toBeDisabled();
     expect(document.body.textContent).not.toMatch(/workbook|solver|backend|parser|native worker|SAT selector|nghiệm|tổ hợp|ràng buộc/i);

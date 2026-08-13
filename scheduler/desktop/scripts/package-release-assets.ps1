@@ -47,7 +47,7 @@ $publishDirectory = Split-Path $publishDirectory -Parent
 $installer = Get-RequiredFile $InstallerPath "Desktop installer"
 $diagnostics = Get-RequiredFile $DiagnosticsPath "Standalone diagnostics executable"
 
-foreach ($relativePath in @("release-manifest.json", "sbom.cdx.json", "THIRD_PARTY_NOTICES.md", "web\index.html")) {
+foreach ($relativePath in @("release-manifest.json", "sbom.cdx.json", "THIRD_PARTY_NOTICES.md", "app.ico", "web\index.html")) {
     Get-RequiredFile (Join-Path $publishDirectory $relativePath) "Published release file $relativePath" | Out-Null
 }
 
@@ -70,11 +70,24 @@ New-Item -ItemType Directory -Force -Path $outputFullPath | Out-Null
 $publishZip = Join-Path $outputFullPath "VNU-UET-Custom-Timetable-Scheduler-$Version-win-x64.zip"
 $diagnosticsAssetName = "VNU-UET-Custom-Timetable-Scheduler-$Version-Diagnostics-win-x64.exe"
 $diagnosticsAsset = Join-Path $outputFullPath $diagnosticsAssetName
+$checksumsPath = Join-Path $outputFullPath "VNU-UET-Custom-Timetable-Scheduler-$Version-SHA256SUMS.txt"
 Compress-Archive -Path (Join-Path $publishDirectory "*") -DestinationPath $publishZip -CompressionLevel Optimal
 Copy-Item -Force $installer (Join-Path $outputFullPath $expectedInstallerName)
 Copy-Item -Force $diagnostics $diagnosticsAsset
 
+$releaseFiles = @(
+    (Get-Item (Join-Path $outputFullPath $expectedInstallerName)),
+    (Get-Item $publishZip),
+    (Get-Item $diagnosticsAsset)
+)
+$checksumLines = $releaseFiles |
+    Sort-Object Name |
+    ForEach-Object {
+        "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant(), $_.Name
+    }
+[System.IO.File]::WriteAllLines($checksumsPath, $checksumLines, [System.Text.UTF8Encoding]::new($false))
+
 # Release metadata remains inside the self-contained publish ZIP. GitHub only
-# publishes the installer, ZIP, and standalone diagnostics executable as release assets.
+# publishes the installer, ZIP, standalone diagnostics executable, and checksum file.
 
 Write-Host "Release assets created: $outputFullPath"

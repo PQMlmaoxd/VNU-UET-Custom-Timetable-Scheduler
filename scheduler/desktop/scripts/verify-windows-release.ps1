@@ -47,7 +47,7 @@ if ($BuildInstaller -and [string]::IsNullOrWhiteSpace($InstallerVersion)) {
 }
 
 $effectiveReleaseVersion = if ([string]::IsNullOrWhiteSpace($ReleaseVersion)) {
-    if ($BuildInstaller) { $InstallerVersion } else { "0.1.0-dev" }
+    if ($BuildInstaller) { $InstallerVersion } else { "1.0.0-dev" }
 }
 else {
     $ReleaseVersion

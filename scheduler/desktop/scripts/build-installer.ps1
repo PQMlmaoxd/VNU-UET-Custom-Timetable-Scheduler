@@ -141,6 +141,7 @@ $requiredPublishFiles = @(
     "hostfxr.dll",
     "hostpolicy.dll",
     "SolverWorker.exe",
+    "app.ico",
     "web\index.html"
 )
 foreach ($relativePath in $requiredPublishFiles) {
@@ -222,7 +223,7 @@ if ($SmokeTest) {
             throw "Installer smoke installation failed with exit code $($installProcess.ExitCode)."
         }
 
-        foreach ($relativePath in @("Scheduler.Desktop.exe", "SolverWorker.exe", "web\index.html", "THIRD_PARTY_NOTICES.md", "release-manifest.json", "sbom.cdx.json")) {
+        foreach ($relativePath in @("Scheduler.Desktop.exe", "SolverWorker.exe", "app.ico", "web\index.html", "THIRD_PARTY_NOTICES.md", "release-manifest.json", "sbom.cdx.json")) {
             if (-not (Test-Path (Join-Path $smokeRoot $relativePath) -PathType Leaf)) {
                 throw "Installer smoke check is missing: $relativePath"
             }

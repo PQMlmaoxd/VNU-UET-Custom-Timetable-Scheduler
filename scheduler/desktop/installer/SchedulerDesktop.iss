@@ -28,6 +28,7 @@
 #define AppId "{{E0DFD8A4-3C3E-4DC7-BB99-7EA58D8E2A5F}"
 #define WebView2ClientId "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 #define WebView2InstallerName "MicrosoftEdgeWebView2Setup.exe"
+#define AppIconFile "{#SourceDir}\app.ico"
 
 [Setup]
 AppId={#AppId}
@@ -45,6 +46,7 @@ OutputBaseFilename=VNU-UET-Custom-Timetable-Scheduler-{#AppVersion}-Setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile={#AppIconFile}
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExeName}
 LicenseFile={#SourceDir}\THIRD_PARTY_NOTICES.md
