@@ -145,7 +145,8 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         }
 
         string? unsatVerificationToken = null;
-        if (solveResult.SolverResult.Status == PersonalSelectionSatStatus.Infeasible)
+        if (solveResult.SolverResult.Status == PersonalSelectionSatStatus.Infeasible &&
+            parseResult.QuarantinedOfferings.IsEmpty)
         {
             unsatVerificationToken = CreateUnsatVerificationTicket(
                 sourceHash,
@@ -183,6 +184,12 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         }
 
         var parseResult = await ParseAsync(document, cancellationToken);
+        if (!parseResult.QuarantinedOfferings.IsEmpty)
+        {
+            throw new DesktopBridgeException(
+                "Không thể xuất chứng nhận formal khi workbook còn LHP chưa công bố lịch.");
+        }
+
         var desiredAssignments = requestedAssignments.Select(assignment => assignment.ToDomain()).ToImmutableArray();
         var preparedSelection = PersonalSelectionPreparation.Create(
             parseResult.Problem,

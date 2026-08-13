@@ -328,9 +328,26 @@ function isParseSummary(value: unknown): boolean {
       "rooms",
       "skipped_rows",
       "fatal_warning_count",
+      "quarantined_lhp_count",
+      "quarantined_session_count",
     ].every((key) => typeof value[key] === "number" && Number.isInteger(value[key]) && value[key] >= 0);
 
-  return numericFieldsValid && isStringArray(value.warnings);
+  return numericFieldsValid
+    && typeof value.partial_import === "boolean"
+    && isStringArray(value.warnings)
+    && isStringArray(value.fatal_warnings)
+    && Array.isArray(value.quarantined_offerings)
+    && value.quarantined_offerings.every((offering) => isRecord(offering)
+      && typeof offering.course_code === "string"
+      && typeof offering.lhp_code === "string"
+      && typeof offering.reason_code === "string"
+      && isStringArray(offering.source_locations)
+      && typeof offering.quarantined_row_count === "number"
+      && Number.isInteger(offering.quarantined_row_count)
+      && offering.quarantined_row_count >= 0
+      && typeof offering.excluded_session_count === "number"
+      && Number.isInteger(offering.excluded_session_count)
+      && offering.excluded_session_count >= 0);
 }
 
 function isPrototypeCatalog(value: unknown): boolean {

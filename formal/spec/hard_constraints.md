@@ -1,7 +1,7 @@
 # Hard Constraint Specification
 ## Fixed-Workbook Personal Timetable Selection
 
-**Version:** 1.3 (Personal Selector)
+**Version:** 1.4 (Personal Selector)
 **Status:** Authoritative for current product flow.
 **Scope:** C# desktop personal-selection flow over a fixed timetable document.
 
@@ -16,6 +16,21 @@ The current product solves this problem only:
 - For each selected teaching team, the system chooses exactly one valid teaching-unit candidate.
 - Chosen `LHP` candidates must be pairwise non-overlapping by timeslot semantics.
 - The desktop command returns up to `k` distinct solutions (`k=5` by default), then ranks them by movement cost.
+
+Before this model is built, XLSX import performs a conservative partial-data
+preprocessing step:
+
+- Hidden and very-hidden timetable sheets are ignored.
+- A physical row whose day, period, or room cell is the exact unresolved marker
+  `Thông báo sau` quarantines its complete `(course_code, lhp_code)` offering.
+- Every otherwise-valid session from that offering is removed from the eligible
+  session universe. The row is reported as a partial-import warning rather than
+  being treated as a schedulable session.
+- Other malformed physical rows remain blocking import errors.
+
+The resulting SAT instance therefore contains only complete, resolved offerings.
+An UNSAT result from a partial import is scoped to that reduced universe and is
+not eligible for a formal UNSAT certificate.
 
 This is **not** a global re-scheduling problem.
 

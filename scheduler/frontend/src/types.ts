@@ -9,7 +9,21 @@ export type ParseSummary = {
   rooms: number;
   skipped_rows: number;
   fatal_warning_count: number;
+  partial_import: boolean;
+  quarantined_lhp_count: number;
+  quarantined_session_count: number;
   warnings: string[];
+  fatal_warnings: string[];
+  quarantined_offerings: QuarantinedOffering[];
+};
+
+export type QuarantinedOffering = {
+  course_code: string;
+  lhp_code: string;
+  reason_code: string;
+  source_locations: string[];
+  quarantined_row_count: number;
+  excluded_session_count: number;
 };
 
 export type AnchorCatalogItem = {

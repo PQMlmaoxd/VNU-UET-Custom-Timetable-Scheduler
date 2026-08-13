@@ -45,8 +45,13 @@ solutions returned by SAT; it does not claim global movement optimality.
 - `solve_workbook` is implemented through `PersonalSelectionService`; it materializes
   and independently validates every model before mapping the current `RescheduleResponse`
   shape. Its default adapter requires a packaged `SolverWorker.exe` beside the desktop
-  executable, or `SCHEDULER_SOLVER_WORKER` pointing to one. A missing worker is a visible
-  command error, never a network fallback.
+  executable, or, in Debug builds, `SCHEDULER_SOLVER_WORKER` pointing to one. Release
+  builds accept an external worker only when `SCHEDULER_ALLOW_EXTERNAL_SOLVER=1`. A
+  missing worker is a visible command error, never a network fallback.
+- XLSX import ignores hidden timetable sheets. A physical row marked `Thông báo sau`
+  quarantines its complete course/LHP offering instead of creating a partial candidate;
+  complete offerings remain selectable. A partial import can solve the retained
+  offerings, but it cannot produce a formal UNSAT certificate.
 - The React "Dừng solver" action cancels the active bridge command by request ID. The
   WPF host propagates that cancellation through application orchestration to
   `NativeSolverClient`, which terminates a worker process that does not stop promptly.
@@ -103,6 +108,26 @@ After building `SolverWorker.exe` with the MSYS2 command in
 The generated release is written under ignored `artifacts/windows-x64/` and verifies the
 copied native worker version, solver self-test, and protocol self-test before the command
 succeeds.
+
+### Debug diagnostic package
+
+The manual **Windows Debug Solver Diagnostics** workflow creates a separate,
+self-contained `win-x64` Debug artifact. It does not create a GitHub Release or change
+the production `v0.1.0` package. The artifact contains the WPF host, React bundle,
+native worker, and direct SAT/UNSAT diagnostics.
+
+To build it from the GitHub Actions page, open **Actions > Windows Debug Solver
+Diagnostics > Run workflow**, then download the `scheduler-desktop-debug-*` artifact.
+Keep the extracted files together. On the affected machine, run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run-solver-diagnostics.ps1 -RootPath $PWD -FailOnCheckFailure
+```
+
+Review `solver-diagnostics.json` before sharing it because it can contain the local
+username, application paths, and environment values. If the direct SAT and UNSAT checks
+pass, start `Scheduler.Desktop.exe` from the same directory and test the UI. The package
+is unsigned and targets 64-bit Windows; endpoint security may still block it.
 
 To run the repeatable automated release gate before publishing a preview, use:
 

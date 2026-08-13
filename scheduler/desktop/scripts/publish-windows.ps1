@@ -4,6 +4,8 @@ param(
     [string]$SolverWorkerPath,
     [ValidatePattern("^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$")]
     [string]$Version = "0.1.0-dev",
+    [ValidateSet("Debug", "Release")]
+    [string]$Configuration = "Release",
     [string]$WebRoot,
     [string]$OutputPath,
     [switch]$SkipFrontendBuild
@@ -62,7 +64,7 @@ if ($webIndexContent -match '(?i)(?:src|href)="/app/') {
 
 Remove-Item -Recurse -Force $OutputPath -ErrorAction SilentlyContinue
 & dotnet publish (Join-Path $desktopRoot "src\Scheduler.Desktop\Scheduler.Desktop.csproj") `
-    --configuration Release `
+    --configuration $Configuration `
     --runtime win-x64 `
     --self-contained true `
     "-p:Version=$Version" `

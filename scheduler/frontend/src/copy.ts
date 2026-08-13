@@ -68,7 +68,10 @@ export const COPY = {
       `Thời khóa biểu có ${count} điểm cần kiểm tra. Hệ thống vẫn giữ nguyên các buổi đã đọc.`,
     validationDetail: "Bạn vẫn có thể chọn lớp từ dữ liệu cố định; các cảnh báo không thay đổi file gốc.",
     skippedRows: (count: number) => `${count} dòng chưa được đưa vào lịch do thiếu hoặc sai thông tin bắt buộc.`,
+    partialImport: (count: number) => `Đã tạm loại ${count} LHP có lịch chưa công bố. Các LHP hoàn chỉnh vẫn có thể được chọn.`,
+    partialImportDetails: "LHP tạm loại:",
     fatalRows: "Một số dòng lịch chưa đủ dữ liệu nên chưa thể tìm lịch. Hãy chọn lại file đã hoàn chỉnh.",
+    fatalRowDetails: "Các dòng cần sửa:",
   },
   solve: {
     kicker: "Bước 3 · Tìm lịch",
@@ -142,6 +145,7 @@ export const COPY = {
     changeSelection: "Đổi lựa chọn",
     chooseAnotherFile: "Chọn thời khóa biểu khác",
     exportUnsat: "Xuất gói kiểm chứng UNSAT",
+    partialUnsatDetail: "Kết quả này chỉ áp dụng cho các LHP đã đủ dữ liệu; không thể xuất chứng nhận formal khi file còn LHP chưa công bố lịch.",
     exportingUnsat: "Đang xuất gói…",
     exportedUnsatTitle: "Đã xuất gói kiểm chứng",
     exportedUnsatDetail: (fileName: string) => `Đã lưu ${fileName}. Bạn có thể dùng các lệnh trong gói để kiểm tra hình thức.`,

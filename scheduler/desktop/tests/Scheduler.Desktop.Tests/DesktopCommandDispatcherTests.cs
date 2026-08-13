@@ -43,6 +43,10 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
         Assert.Equal("INT1000", result.GetProperty("prototype_catalog").GetProperty("anchors")[0]
             .GetProperty("course_code").GetString());
         Assert.Equal(JsonValueKind.Array, result.GetProperty("parse_summary").GetProperty("warnings").ValueKind);
+        Assert.False(result.GetProperty("parse_summary").GetProperty("partial_import").GetBoolean());
+        Assert.Equal(0, result.GetProperty("parse_summary").GetProperty("quarantined_lhp_count").GetInt32());
+        Assert.Equal(JsonValueKind.Array, result.GetProperty("parse_summary")
+            .GetProperty("quarantined_offerings").ValueKind);
         Assert.Equal(JsonValueKind.Array, result.GetProperty("existing_schedule_validation")
             .GetProperty("sample_violations").ValueKind);
         Assert.Equal(JsonValueKind.Number, result.GetProperty("prototype_catalog").GetProperty("room_cost_rules")[0]
@@ -121,6 +125,44 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task SolveWorkbookRejectsFatalScheduleGapBeforeStartingSolver()
+    {
+        var workbookPath = CreateWorkbook(includeRoom: false, includeValidSession: true);
+        var solvePayload = JsonSerializer.SerializeToElement(new
+        {
+            workbook = new
+            {
+                file_name = "fixture.xlsx",
+                bytes_base64 = Convert.ToBase64String(await File.ReadAllBytesAsync(workbookPath)),
+            },
+            desired_assignments = new[]
+            {
+                new
+                {
+                    course_code = "INT1000",
+                    course_name = "Programming",
+                    teaching_team_label = "Alice",
+                },
+            },
+            timeout_seconds = 30,
+        });
+        var solverCalled = false;
+        var dispatcher = new DesktopCommandDispatcher(() =>
+        {
+            solverCalled = true;
+            return new SatisfyingSolver();
+        });
+
+        var exception = await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "solve_workbook",
+            solvePayload,
+            CancellationToken.None));
+
+        Assert.False(solverCalled);
+        Assert.Contains("thiếu hoặc sai thông tin", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ExportUnsatArtifactWritesACompleteCnfPackageWithoutChangingSolverFlow()
     {
         var workbookPath = CreateWorkbook();
@@ -188,6 +230,61 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task PartialImportKeepsCompleteOfferingsButDoesNotIssueFormalUnsatToken()
+    {
+        var workbookPath = CreateWorkbook(includeUnresolvedSession: true);
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            workbook = new
+            {
+                file_name = "fixture.xlsx",
+                bytes_base64 = Convert.ToBase64String(await File.ReadAllBytesAsync(workbookPath)),
+            },
+            desired_assignments = new[]
+            {
+                new { course_code = "INT1000", course_name = "Programming", teaching_team_label = "Alice" },
+            },
+            timeout_seconds = 30,
+        });
+        var destination = Path.Combine(temporaryDirectory, "partial-unsat.zip");
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new InfeasibleSolver(),
+            () => destination);
+
+        var result = await dispatcher.DispatchAsync("solve_workbook", payload, CancellationToken.None);
+
+        var parseSummary = result.GetProperty("parse_summary");
+        Assert.True(parseSummary.GetProperty("partial_import").GetBoolean());
+        Assert.Equal(1, parseSummary.GetProperty("quarantined_lhp_count").GetInt32());
+        Assert.Equal("INT1000", parseSummary.GetProperty("quarantined_offerings")[0]
+            .GetProperty("course_code").GetString());
+        Assert.Equal("LHP-2", parseSummary.GetProperty("quarantined_offerings")[0]
+            .GetProperty("lhp_code").GetString());
+        Assert.Null(result.GetProperty("solver").GetProperty("formal_verification_token").GetString());
+
+        var exportPayload = JsonSerializer.SerializeToElement(new
+        {
+            workbook = new
+            {
+                file_name = "fixture.xlsx",
+                bytes_base64 = Convert.ToBase64String(await File.ReadAllBytesAsync(workbookPath)),
+            },
+            desired_assignments = new[]
+            {
+                new { course_code = "INT1000", course_name = "Programming", teaching_team_label = "Alice" },
+            },
+            verification_token = "stale-token",
+        });
+
+        var exception = await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "export_unsat_artifact",
+            exportPayload,
+            CancellationToken.None));
+
+        Assert.Contains("chưa công bố lịch", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SolveWorkbookForwardsCancellationToTheSolver()
     {
         var workbookPath = CreateWorkbook();
@@ -219,7 +316,10 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
 
     public void Dispose() => Directory.Delete(temporaryDirectory, true);
 
-    private string CreateWorkbook()
+    private string CreateWorkbook(
+        bool includeRoom = true,
+        bool includeValidSession = false,
+        bool includeUnresolvedSession = false)
     {
         var path = Path.Combine(temporaryDirectory, "fixture.xlsx");
         using var document = SpreadsheetDocument.Create(path, SpreadsheetDocumentType.Workbook);
@@ -237,9 +337,46 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
         AppendCell(row, "L5", "LT");
         AppendCell(row, "M5", "2");
         AppendCell(row, "N5", "1");
-        AppendCell(row, "O5", "101-A");
+        if (includeRoom)
+        {
+            AppendCell(row, "O5", "101-A");
+        }
         AppendCell(row, "P5", "Alice");
-        worksheetPart.Worksheet = new Worksheet(new SheetData(row));
+        var sheetData = new SheetData(row);
+        if (includeValidSession)
+        {
+            var validRow = new Row { RowIndex = 6 };
+            AppendCell(validRow, "A6", "K69I-IT1");
+            AppendCell(validRow, "B6", "INT1000");
+            AppendCell(validRow, "C6", "Programming");
+            AppendCell(validRow, "D6", "3");
+            AppendCell(validRow, "I6", "30");
+            AppendCell(validRow, "J6", "LHP-2");
+            AppendCell(validRow, "K6", "CL");
+            AppendCell(validRow, "L6", "LT");
+            AppendCell(validRow, "M6", "2");
+            AppendCell(validRow, "N6", "2");
+            AppendCell(validRow, "O6", "101-B");
+            AppendCell(validRow, "P6", "Alice");
+            sheetData.Append(validRow);
+        }
+        if (includeUnresolvedSession)
+        {
+            var unresolvedRow = new Row { RowIndex = 6 };
+            AppendCell(unresolvedRow, "A6", "K69I-IT1");
+            AppendCell(unresolvedRow, "B6", "INT1000");
+            AppendCell(unresolvedRow, "C6", "Programming");
+            AppendCell(unresolvedRow, "D6", "3");
+            AppendCell(unresolvedRow, "I6", "30");
+            AppendCell(unresolvedRow, "J6", "LHP-2");
+            AppendCell(unresolvedRow, "K6", "CL");
+            AppendCell(unresolvedRow, "L6", "TH");
+            AppendCell(unresolvedRow, "M6", "Thông báo sau");
+            AppendCell(unresolvedRow, "P6", "Bob");
+            sheetData.Append(unresolvedRow);
+        }
+
+        worksheetPart.Worksheet = new Worksheet(sheetData);
 
         var sheets = workbookPart.Workbook.AppendChild(new Sheets());
         sheets.Append(new Sheet

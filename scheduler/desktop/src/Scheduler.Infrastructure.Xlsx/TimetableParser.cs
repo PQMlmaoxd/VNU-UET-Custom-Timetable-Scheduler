@@ -74,6 +74,8 @@ public sealed class TimetableParser
         var warnings = new List<string>();
         var fatalWarnings = new List<string>();
         var skippedRows = new List<uint>();
+        var quarantinedLocations = new Dictionary<(string CourseCode, string LhpCode), HashSet<string>>();
+        var quarantinedRowCounts = new Dictionary<(string CourseCode, string LhpCode), int>();
 
         using var document = SpreadsheetDocument.Open(workbookPath, false);
         var workbookPart = document.WorkbookPart
@@ -149,6 +151,18 @@ public sealed class TimetableParser
                     {
                         fatalWarnings.Add(warning);
                     }
+                    if (parsed.Quarantine is { } quarantine)
+                    {
+                        var key = (quarantine.CourseCode, quarantine.LhpCode);
+                        if (!quarantinedLocations.TryGetValue(key, out var locations))
+                        {
+                            locations = new HashSet<string>(StringComparer.Ordinal);
+                            quarantinedLocations.Add(key, locations);
+                        }
+
+                        locations.Add(quarantine.SourceLocation);
+                        quarantinedRowCounts[key] = quarantinedRowCounts.GetValueOrDefault(key) + 1;
+                    }
                     skippedRows.Add(rowIndex);
                     continue;
                 }
@@ -166,28 +180,65 @@ public sealed class TimetableParser
             }
         }
 
-        if (inScope.Count == 0 && otherDepartment.Count == 0)
+        var quarantinedKeys = quarantinedLocations.Keys.ToHashSet();
+        var filteredInScope = inScope
+            .Where(session => !quarantinedKeys.Contains((session.Course.Code, session.LhpCode)))
+            .ToList();
+        var filteredOtherDepartment = otherDepartment
+            .Where(session => !quarantinedKeys.Contains((session.Course.Code, session.LhpCode)))
+            .ToList();
+
+        if (filteredInScope.Count == 0 && filteredOtherDepartment.Count == 0)
         {
+            if (quarantinedLocations.Count > 0)
+            {
+                throw new InvalidDataException(
+                    "The workbook contains only timetable offerings whose physical schedules are unresolved.");
+            }
+
             throw new InvalidDataException("No usable timetable sessions were found in the workbook.");
         }
+
+        var retainedRoomCodes = filteredInScope
+            .Concat(filteredOtherDepartment)
+            .Select(session => session.Room?.Code)
+            .Where(code => code is not null)
+            .ToHashSet(StringComparer.Ordinal);
+        var availableRooms = rooms.Values
+            .Where(room => !room.IsVirtual && retainedRoomCodes.Contains(room.Code))
+            .ToImmutableArray();
+        var quarantinedOfferings = quarantinedLocations
+            .OrderBy(pair => pair.Key.CourseCode, StringComparer.Ordinal)
+            .ThenBy(pair => pair.Key.LhpCode, StringComparer.Ordinal)
+            .Select(pair => new QuarantinedOffering(
+                pair.Key.CourseCode,
+                pair.Key.LhpCode,
+                "unresolved_physical_schedule",
+                pair.Value.Order(StringComparer.Ordinal).ToImmutableArray(),
+                quarantinedRowCounts[pair.Key],
+                checked(
+                    inScope.Count(session => pair.Key == (session.Course.Code, session.LhpCode)) +
+                    otherDepartment.Count(session => pair.Key == (session.Course.Code, session.LhpCode)))))
+            .ToImmutableArray();
 
         var problem = new SchedulingProblem(
             problemId,
             departmentFilter ?? "ALL",
             semester,
-            inScope.ToImmutableArray(),
+            filteredInScope.ToImmutableArray(),
             TimetableSemantics.BuildAllTimeSlots(),
-            rooms.Values.Where(room => !room.IsVirtual).ToImmutableArray(),
-            TimetableSemantics.BuildLecturerBlocks(otherDepartment, inScope));
+            availableRooms,
+            TimetableSemantics.BuildLecturerBlocks(filteredOtherDepartment, filteredInScope));
 
         return new TimetableParseResult(
             problem,
-            otherDepartment.ToImmutableArray(),
+            filteredOtherDepartment.ToImmutableArray(),
             warnings.ToImmutableArray(),
             skippedRows.ToImmutableArray(),
             totalRowsProcessed)
         {
             FatalWarnings = fatalWarnings.ToImmutableArray(),
+            QuarantinedOfferings = quarantinedOfferings,
         };
     }
 
@@ -197,7 +248,8 @@ public sealed class TimetableParser
         CancellationToken cancellationToken)
     {
         var sheets = workbookPart.Workbook.Sheets?.Elements<Sheet>().ToArray() ?? [];
-        var legacySheet = sheets.SingleOrDefault(sheet => sheet.Name?.Value == SheetName);
+        var legacySheet = sheets.SingleOrDefault(sheet =>
+            sheet.Name?.Value == SheetName && IsVisibleSheet(sheet));
         if (legacySheet is not null)
         {
             var legacyPart = (WorksheetPart)workbookPart.GetPartById(legacySheet.Id!);
@@ -217,6 +269,11 @@ public sealed class TimetableParser
         {
             cancellationToken.ThrowIfCancellationRequested();
             var sheet = sheets[index];
+            if (!IsVisibleSheet(sheet))
+            {
+                continue;
+            }
+
             var worksheetPart = (WorksheetPart)workbookPart.GetPartById(sheet.Id!);
             if (TryCreateHeaderProfile(sheet, worksheetPart, sharedStrings, index + 1, out var profile))
             {
@@ -225,6 +282,12 @@ public sealed class TimetableParser
         }
 
         return profiles.ToImmutable();
+    }
+
+    private static bool IsVisibleSheet(Sheet sheet)
+    {
+        var state = sheet.State?.Value;
+        return state is null || state == SheetStateValues.Visible;
     }
 
     private static bool HasLegacySessionRows(
@@ -399,9 +462,11 @@ public sealed class TimetableParser
         Dictionary<string, Lecturer> lecturers)
     {
         var columns = profile.Columns;
-        var courseCode = ReadCell(cells, columns.CourseCode) ?? "UNKNOWN";
+        var rawCourseCode = ReadCell(cells, columns.CourseCode);
+        var rawLhpCode = ReadCell(cells, columns.Lhp);
+        var courseCode = rawCourseCode ?? "UNKNOWN";
         var courseName = ReadCell(cells, columns.CourseName) ?? "Unknown Course";
-        var lhpCode = ReadCell(cells, columns.Lhp) ?? $"{courseCode}_row_{rowIndex}";
+        var lhpCode = rawLhpCode ?? $"{courseCode}_row_{rowIndex}";
         var group = ReadCell(cells, columns.Group) ?? "CL";
         var rawSessionType = ReadCell(cells, columns.SessionType);
 
@@ -416,6 +481,24 @@ public sealed class TimetableParser
         }
 
         var rawLecturers = ReadCell(cells, columns.Lecturer);
+        var day = ReadCell(cells, columns.Day);
+        var period = ReadCell(cells, columns.Period);
+        var rawRoom = ReadCell(cells, columns.Room);
+        if (sessionType != SessionType.Onl &&
+            rawCourseCode is not null &&
+            rawLhpCode is not null &&
+            (IsUnresolvedScheduleMarker(day) ||
+             IsUnresolvedScheduleMarker(period) ||
+             IsUnresolvedScheduleMarker(rawRoom)))
+        {
+            return ParsedRow.FromQuarantine(
+                $"Session {profile.SessionId(rowIndex)}: physical schedule is unresolved " +
+                $"(day='{day ?? ""}', period='{period ?? ""}', room='{rawRoom ?? ""}').",
+                courseCode,
+                lhpCode,
+                $"{profile.Name} row {rowIndex}");
+        }
+
         var sessionLecturers = rawLecturers is null
             ? ImmutableArray.Create(new Lecturer("TBA", LecturerType.Organization))
             : TimetableSemantics.Split(rawLecturers)
@@ -431,8 +514,6 @@ public sealed class TimetableParser
             courses);
 
         TimeSlot? timeSlot = null;
-        var day = ReadCell(cells, columns.Day);
-        var period = ReadCell(cells, columns.Period);
         if (day is not null && period is not null && TimetableSemantics.TryParseDay(day, out var parsedDay) &&
             TimetableSemantics.TryParsePeriod(period, out var parsedPeriod))
         {
@@ -444,7 +525,7 @@ public sealed class TimetableParser
         {
             room = GetOrCreateRoom("ONL", rooms);
         }
-        else if (ReadCell(cells, columns.Room) is { } roomCode)
+        else if (rawRoom is { } roomCode)
         {
             room = GetOrCreateRoom(roomCode, rooms);
         }
@@ -475,9 +556,9 @@ public sealed class TimetableParser
         }
         catch (DomainValidationException exception)
         {
-                return ParsedRow.FromWarning(
-                    exception.Message,
-                    IsFatalScheduleGap(sessionType, day, period, ReadCell(cells, columns.Room)));
+            return ParsedRow.FromWarning(
+                exception.Message,
+                IsFatalScheduleGap(sessionType, day, period, rawRoom));
         }
     }
 
@@ -683,10 +764,29 @@ public sealed class TimetableParser
         return hasTime != hasRoom;
     }
 
-    private sealed record ParsedRow(Session? Session, string? Warning, bool IsFatal)
-    {
-        public static ParsedRow FromSession(Session session) => new(session, null, false);
+    private static bool IsUnresolvedScheduleMarker(string? value) =>
+        string.Equals(NormalizeHeader(value ?? string.Empty), "thongbaosau", StringComparison.Ordinal);
 
-        public static ParsedRow FromWarning(string warning, bool isFatal = false) => new(null, warning, isFatal);
+    private sealed record ParsedRow(
+        Session? Session,
+        string? Warning,
+        bool IsFatal,
+        QuarantineInfo? Quarantine)
+    {
+        public static ParsedRow FromSession(Session session) => new(session, null, false, null);
+
+        public static ParsedRow FromWarning(string warning, bool isFatal = false) => new(null, warning, isFatal, null);
+
+        public static ParsedRow FromQuarantine(
+            string warning,
+            string courseCode,
+            string lhpCode,
+            string sourceLocation) => new(
+            null,
+            warning,
+            false,
+            new QuarantineInfo(courseCode, lhpCode, sourceLocation));
     }
+
+    private sealed record QuarantineInfo(string CourseCode, string LhpCode, string SourceLocation);
 }

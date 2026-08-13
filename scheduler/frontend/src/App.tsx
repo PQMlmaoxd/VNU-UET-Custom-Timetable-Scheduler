@@ -111,7 +111,8 @@ function App() {
   );
   const assignments = useMemo(() => selectedAssignments(rows), [rows]);
   const hasIncompleteRows = hasIncompleteSelections(rows);
-  const maxStep = getMaxStep(Boolean(workbook), assignments.length, hasIncompleteRows);
+  const fatalWarningCount = workbook?.parse_summary.fatal_warning_count ?? 0;
+  const maxStep = getMaxStep(Boolean(workbook), assignments.length, hasIncompleteRows, fatalWarningCount);
   const clampedCurrentStep = currentStep > maxStep ? maxStep : currentStep;
 
   useEffect(() => {
@@ -392,6 +393,16 @@ function App() {
       return;
     }
 
+    if (workbook.parse_summary.fatal_warning_count > 0) {
+      setStatus({
+        tone: "error",
+        title: COPY.selection.fatalRows,
+        detail: COPY.selection.fatalRowDetails,
+      });
+      setCurrentStep(2);
+      return;
+    }
+
     const timeout = clampTimeout(timeoutSeconds);
     setTimeoutSeconds(timeout);
     setSolveState("busy");
@@ -568,12 +579,14 @@ function App() {
       {currentStep === 2 && workbook ? (
         <SelectionPanel
           catalog={catalog}
-           rows={rows}
-           assignments={assignments}
-           validation={workbook.existing_schedule_validation}
-           skippedRows={workbook.parse_summary.skipped_rows}
-           fatalWarnings={workbook.parse_summary.fatal_warning_count}
-           onCourseChange={updateCourse}
+          rows={rows}
+          assignments={assignments}
+          validation={workbook.existing_schedule_validation}
+          skippedRows={workbook.parse_summary.skipped_rows}
+          fatalWarnings={workbook.parse_summary.fatal_warning_count}
+          fatalWarningMessages={workbook.parse_summary.fatal_warnings}
+          quarantinedOfferings={workbook.parse_summary.quarantined_offerings}
+          onCourseChange={updateCourse}
           onCourseClear={clearCourse}
           onLecturerChange={updateTeachingTeam}
           onAdd={addSelectionRow}
@@ -591,7 +604,7 @@ function App() {
           timeoutSeconds={timeoutSeconds}
           solveState={solveState}
           onTimeoutChange={setTimeoutSeconds}
-           onBack={returnToSelection}
+          onBack={returnToSelection}
           onSolve={solve}
           hasIncompleteRows={hasIncompleteRows}
           headingRef={stageHeading}
@@ -609,7 +622,7 @@ function App() {
           onCancel={cancelSolve}
           onExportUnsat={exportFormalUnsat}
           isExportingUnsat={isExportingUnsat}
-           onBackToSelection={returnToSelection}
+          onBackToSelection={returnToSelection}
           onReset={() => resetWorkbookState(null)}
           headingRef={stageHeading}
         />
@@ -638,11 +651,16 @@ function ThemeControl({
   );
 }
 
-function getMaxStep(hasWorkbook: boolean, assignmentCount: number, hasIncompleteRows: boolean): StepId {
+function getMaxStep(
+  hasWorkbook: boolean,
+  assignmentCount: number,
+  hasIncompleteRows: boolean,
+  fatalWarningCount: number,
+): StepId {
   if (!hasWorkbook) {
     return 1;
   }
-  if (assignmentCount === 0 || hasIncompleteRows) {
+  if (assignmentCount === 0 || hasIncompleteRows || fatalWarningCount > 0) {
     return 2;
   }
   return 3;
@@ -762,6 +780,8 @@ function SelectionPanel({
   validation,
   skippedRows,
   fatalWarnings,
+  fatalWarningMessages,
+  quarantinedOfferings,
   onCourseChange,
   onCourseClear,
   onLecturerChange,
@@ -777,6 +797,8 @@ function SelectionPanel({
   validation: ValidateExistingResponse["existing_schedule_validation"];
   skippedRows: number;
   fatalWarnings: number;
+  fatalWarningMessages: string[];
+  quarantinedOfferings: ValidateExistingResponse["parse_summary"]["quarantined_offerings"];
   onCourseChange: (rowId: string, course: CourseCatalogItem) => void;
   onCourseClear: (rowId: string) => void;
   onLecturerChange: (rowId: string, lecturerName: string) => void;
@@ -793,7 +815,7 @@ function SelectionPanel({
         <h2 id="selection-heading" ref={headingRef} tabIndex={-1}>{COPY.selection.heading}</h2>
         <p className="section-copy">{COPY.selection.description}</p>
 
-        {!validation.is_valid || skippedRows > 0 || fatalWarnings > 0 ? (
+        {!validation.is_valid || skippedRows > 0 || fatalWarnings > 0 || quarantinedOfferings.length > 0 ? (
           <aside className="import-warning" role="status" aria-live="polite">
             {!validation.is_valid ? (
               <>
@@ -809,7 +831,34 @@ function SelectionPanel({
               </>
             ) : null}
             {skippedRows > 0 ? <p>{COPY.selection.skippedRows(skippedRows)}</p> : null}
-            {fatalWarnings > 0 ? <p>{COPY.selection.fatalRows}</p> : null}
+            {quarantinedOfferings.length > 0 ? (
+              <>
+                <p>{COPY.selection.partialImport(quarantinedOfferings.length)}</p>
+                <strong>{COPY.selection.partialImportDetails}</strong>
+                <ul>
+                  {quarantinedOfferings.slice(0, 10).map((offering) => (
+                    <li key={`${offering.course_code}-${offering.lhp_code}`}>
+                      {offering.course_code} · {offering.lhp_code} ({offering.quarantined_row_count} dòng)
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {fatalWarnings > 0 ? (
+              <>
+                <p>{COPY.selection.fatalRows}</p>
+                {fatalWarningMessages.length > 0 ? (
+                  <>
+                    <strong>{COPY.selection.fatalRowDetails}</strong>
+                    <ul>
+                      {fatalWarningMessages.slice(0, 10).map((warning) => (
+                        <li key={warning}>{warning}</li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+              </>
+            ) : null}
           </aside>
         ) : null}
 
@@ -829,15 +878,15 @@ function SelectionPanel({
                 />
                 <label className="field">
                   <span>{COPY.selection.lecturerLabel}</span>
-                   <select
-                     value={row.teaching_team_key}
+                  <select
+                    value={row.teaching_team_key}
                     disabled={!selectedCourse}
                     onChange={(event) => onLecturerChange(row.id, event.target.value)}
                   >
                     <option value="">{COPY.selection.lecturerPlaceholder}</option>
-                     {selectedCourse?.lecturers.map((lecturer) => (
-                       <option key={lecturer.teaching_team_key} value={lecturer.teaching_team_key}>
-                         {lecturer.teaching_team_label} · {lecturer.session_count} buổi
+                    {selectedCourse?.lecturers.map((lecturer) => (
+                      <option key={lecturer.teaching_team_key} value={lecturer.teaching_team_key}>
+                        {lecturer.teaching_team_label} · {lecturer.session_count} buổi
                       </option>
                     ))}
                   </select>
@@ -861,7 +910,7 @@ function SelectionPanel({
           <button
             className="button primary"
             type="button"
-            disabled={assignments.length === 0 || hasIncompleteRows}
+            disabled={assignments.length === 0 || hasIncompleteRows || fatalWarnings > 0}
             onClick={onContinue}
           >
             {COPY.selection.continue}
@@ -874,9 +923,9 @@ function SelectionPanel({
         {assignments.length > 0 ? (
           <ul className="compact-list">
             {assignments.map((assignment) => (
-               <li key={`${assignment.course_code}-${assignment.teaching_team_key}`}>
-                 <strong>{assignment.course_code}</strong>
-                 <span>{assignment.teaching_team_label}</span>
+              <li key={`${assignment.course_code}-${assignment.teaching_team_key}`}>
+                <strong>{assignment.course_code}</strong>
+                <span>{assignment.teaching_team_label}</span>
               </li>
             ))}
           </ul>
@@ -1193,7 +1242,7 @@ function ResultsPanel({
           <div className="empty-state">
             <strong>{COPY.results.emptyHeading}</strong>
             <p>{COPY.results.emptyDetail}</p>
-            {isUnsat && isDesktopApp() ? (
+            {isUnsat && isDesktopApp() && response.solver.formal_verification_token ? (
               <div className="action-row">
                 <button
                   className="button secondary"
@@ -1204,6 +1253,9 @@ function ResultsPanel({
                   {isExportingUnsat ? COPY.results.exportingUnsat : COPY.results.exportUnsat}
                 </button>
               </div>
+            ) : null}
+            {isUnsat && response.parse_summary.partial_import ? (
+              <p>{COPY.results.partialUnsatDetail}</p>
             ) : null}
           </div>
         )}

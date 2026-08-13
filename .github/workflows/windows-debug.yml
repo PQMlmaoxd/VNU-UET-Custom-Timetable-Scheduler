@@ -1,0 +1,119 @@
+name: Windows Debug Solver Diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-debug-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_SDK_VERSION: 9.0.312
+  NODE_VERSION: 24.12.0
+  DEBUG_VERSION: 0.1.0-debug.${{ github.run_number }}
+
+jobs:
+  diagnose:
+    name: Build and package Debug solver
+    runs-on: windows-2022
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Verify public source snapshot
+        if: ${{ hashFiles('docs/release/SOURCE_SNAPSHOT.sha256') != '' }}
+        shell: bash
+        run: ./scheduler/desktop/scripts/verify-source-snapshot.sh
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: scheduler/frontend/package-lock.json
+
+      - name: Install MSYS2 MinGW-w64 toolchain
+        uses: msys2/setup-msys2@40677d36a502eb2cf0fb808cc9dec31bf6152638 # v2.28.0
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-binutils
+
+      - name: Build static SolverWorker
+        shell: msys2 {0}
+        run: ./scheduler/desktop/scripts/build-windows-solver-worker.sh
+
+      - name: Build frontend bundle
+        shell: powershell
+        run: |
+          Push-Location scheduler/frontend
+          try {
+              npm.cmd ci
+              if ($LASTEXITCODE -ne 0) { throw 'Frontend dependency installation failed.' }
+              npm.cmd run build
+              if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' }
+          }
+          finally {
+              Pop-Location
+          }
+
+      - name: Publish self-contained Debug package
+        shell: powershell
+        env:
+          DEBUG_VERSION: ${{ env.DEBUG_VERSION }}
+        run: >-
+          ./scheduler/desktop/scripts/publish-windows.ps1
+          -SolverWorkerPath ./scheduler/desktop/native/SolverWorker/out/windows-x64/SolverWorker.exe
+          -Version $env:DEBUG_VERSION
+          -Configuration Debug
+          -WebRoot ./scheduler/frontend/dist
+          -OutputPath ./scheduler/desktop/artifacts/windows-debug
+          -SkipFrontendBuild
+
+      - name: Add diagnostic tools to package
+        shell: powershell
+        env:
+          DEBUG_VERSION: ${{ env.DEBUG_VERSION }}
+        run: |
+          $package = (Resolve-Path './scheduler/desktop/artifacts/windows-debug').Path
+          Copy-Item './scheduler/desktop/scripts/run-solver-diagnostics.ps1' $package -Force
+          Copy-Item './scheduler/desktop/scripts/run-solver-diagnostics.cmd' $package -Force
+          Copy-Item './scheduler/desktop/DEBUG_PACKAGE_README.md' (Join-Path $package 'DEBUG_PACKAGE_README.md') -Force
+          @(
+              "Build version: $env:DEBUG_VERSION"
+              "Commit: $env:GITHUB_SHA"
+              "Workflow run: $env:GITHUB_RUN_ID"
+              "Configuration: Debug"
+              "Runtime: win-x64, self-contained"
+          ) | Set-Content -LiteralPath (Join-Path $package 'DEBUG_BUILD_INFO.txt') -Encoding utf8
+
+      - name: Run SAT and UNSAT diagnostics on runner
+        shell: powershell
+        run: >-
+          ./scheduler/desktop/artifacts/windows-debug/run-solver-diagnostics.ps1
+          -RootPath ./scheduler/desktop/artifacts/windows-debug
+          -FailOnCheckFailure
+
+      - name: Upload Debug diagnostic package
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scheduler-desktop-debug-${{ github.run_number }}
+          path: scheduler/desktop/artifacts/windows-debug
+          if-no-files-found: warn
+          retention-days: 14

@@ -16,6 +16,7 @@ class FakeDesktopWebView {
 
   constructor(
     private readonly autoRespond: boolean,
+    private readonly response: unknown = workbookResponse,
   ) {}
 
   addEventListener(_event: "message", listener: (event: MessageEvent<unknown>) => void) {
@@ -33,7 +34,7 @@ class FakeDesktopWebView {
       return;
     }
 
-    const result = request.method === "validate_workbook" ? workbookResponse : {};
+    const result = request.method === "validate_workbook" ? this.response : {};
     this.respond({ protocol_version: 1, id: request.id, ok: true, result });
   }
 
@@ -59,7 +60,12 @@ const workbookResponse = {
     rooms: 2,
     skipped_rows: 0,
     fatal_warning_count: 0,
+    partial_import: false,
+    quarantined_lhp_count: 0,
+    quarantined_session_count: 0,
     warnings: [],
+    fatal_warnings: [],
+    quarantined_offerings: [],
   },
   prototype_catalog: {
     anchors: [
@@ -82,6 +88,24 @@ const workbookResponse = {
   },
 };
 
+const partialWorkbookResponse = {
+  ...workbookResponse,
+  parse_summary: {
+    ...workbookResponse.parse_summary,
+    partial_import: true,
+    quarantined_lhp_count: 1,
+    quarantined_session_count: 1,
+    quarantined_offerings: [{
+      course_code: "INT2213",
+      lhp_code: "INT2213-02",
+      reason_code: "unresolved_physical_schedule",
+      source_locations: ["TKB K67 - K70 row 790"],
+      quarantined_row_count: 1,
+      excluded_session_count: 1,
+    }],
+  },
+};
+
 const originalChrome = Object.getOwnPropertyDescriptor(window, "chrome");
 
 function makeTimetableFile(contents: string, name: string): File {
@@ -94,8 +118,8 @@ function makeTimetableFile(contents: string, name: string): File {
   return file;
 }
 
-function mockDesktopBridge(autoRespond = true) {
-  const webView = new FakeDesktopWebView(autoRespond);
+function mockDesktopBridge(autoRespond = true, response: unknown = workbookResponse) {
+  const webView = new FakeDesktopWebView(autoRespond, response);
   Object.defineProperty(window, "chrome", {
     configurable: true,
     value: { webview: webView },
@@ -185,6 +209,26 @@ describe("App", () => {
 
     expect(screen.getByText(COPY.selection.incomplete)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: COPY.selection.continue })).toBeDisabled();
+  });
+
+  it("shows partial import details without blocking complete selections", async () => {
+    const user = userEvent.setup();
+    mockDesktopBridge(true, partialWorkbookResponse);
+    render(<App />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, makeTimetableFile("xlsx", "timetable.xlsx"));
+    await user.click(screen.getByRole("button", { name: COPY.upload.readButton }));
+
+    await screen.findByRole("heading", { name: COPY.selection.heading });
+    expect(screen.getByText(COPY.selection.partialImport(1))).toBeInTheDocument();
+    expect(screen.getByText(/INT2213 · INT2213-02/)).toBeInTheDocument();
+
+    const courseInput = screen.getByPlaceholderText(COPY.selection.coursePlaceholder);
+    await user.click(courseInput);
+    await user.click(screen.getByRole("option", { name: /INT2213/i }));
+
+    expect(screen.getByRole("button", { name: COPY.selection.continue })).toBeEnabled();
   });
 
   it("ignores a stale validation response after the workbook changes", async () => {

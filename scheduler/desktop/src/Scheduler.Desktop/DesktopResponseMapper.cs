@@ -90,7 +90,20 @@ public static class DesktopResponseMapper
         parseResult.Problem.AvailableRooms.Length,
         parseResult.SkippedRows.Length,
         parseResult.FatalWarnings.Length,
-        parseResult.Warnings.Take(10).ToImmutableArray());
+        parseResult.QuarantinedOfferings.Length > 0,
+        parseResult.QuarantinedOfferings.Length,
+        parseResult.QuarantinedOfferings.Sum(offering => offering.ExcludedSessionCount),
+        parseResult.Warnings.Take(10).ToImmutableArray(),
+        parseResult.FatalWarnings.Take(10).ToImmutableArray(),
+        parseResult.QuarantinedOfferings
+            .Select(offering => new QuarantinedOfferingItem(
+                offering.CourseCode,
+                offering.LhpCode,
+                offering.ReasonCode,
+                offering.SourceLocations,
+                offering.QuarantinedRowCount,
+                offering.ExcludedSessionCount))
+            .ToImmutableArray());
 
     private static ImmutableArray<DesiredAnchorSummary> CreateDesiredSummaries(
         SchedulingProblem problem,
@@ -273,7 +286,20 @@ public static class DesktopResponseMapper
         [property: JsonPropertyName("rooms")] int Rooms,
         [property: JsonPropertyName("skipped_rows")] int SkippedRows,
         [property: JsonPropertyName("fatal_warning_count")] int FatalWarningCount,
-        [property: JsonPropertyName("warnings")] ImmutableArray<string> Warnings);
+        [property: JsonPropertyName("partial_import")] bool PartialImport,
+        [property: JsonPropertyName("quarantined_lhp_count")] int QuarantinedLhpCount,
+        [property: JsonPropertyName("quarantined_session_count")] int QuarantinedSessionCount,
+        [property: JsonPropertyName("warnings")] ImmutableArray<string> Warnings,
+        [property: JsonPropertyName("fatal_warnings")] ImmutableArray<string> FatalWarnings,
+        [property: JsonPropertyName("quarantined_offerings")] ImmutableArray<QuarantinedOfferingItem> QuarantinedOfferings);
+
+    public sealed record QuarantinedOfferingItem(
+        [property: JsonPropertyName("course_code")] string CourseCode,
+        [property: JsonPropertyName("lhp_code")] string LhpCode,
+        [property: JsonPropertyName("reason_code")] string ReasonCode,
+        [property: JsonPropertyName("source_locations")] ImmutableArray<string> SourceLocations,
+        [property: JsonPropertyName("quarantined_row_count")] int QuarantinedRowCount,
+        [property: JsonPropertyName("excluded_session_count")] int ExcludedSessionCount);
 
     public sealed record PrototypeCatalog(
         [property: JsonPropertyName("anchors")] ImmutableArray<AnchorCatalogItem> Anchors,

@@ -48,7 +48,12 @@ const validateResponse = {
     rooms: 1,
     skipped_rows: 0,
     fatal_warning_count: 0,
+    partial_import: false,
+    quarantined_lhp_count: 0,
+    quarantined_session_count: 0,
     warnings: [],
+    fatal_warnings: [],
+    quarantined_offerings: [],
   },
   prototype_catalog: {
     anchors: [{

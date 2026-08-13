@@ -53,6 +53,134 @@ public sealed class TimetableParserTests : IDisposable
     }
 
     [Fact]
+    public void ParseMarksPhysicalScheduleGapAsFatalWarning()
+    {
+        var workbookPath = CreateWorkbook(TimetableParser.SheetName, new[]
+        {
+            Row(5, "K69I-IT1", "INT1000", "Programming", "3", "30", "LHP-1", "CL", "LT", "2", "1", null, "Alice"),
+            Row(6, "K69I-IT1", "INT1000", "Programming", "3", "30", "LHP-2", "CL", "LT", "2", "2", "101-A", "Alice"),
+        });
+
+        var result = TimetableParser.Parse(workbookPath);
+
+        Assert.Equal(new uint[] { 5 }, result.SkippedRows);
+        var warning = Assert.Single(result.Warnings);
+        Assert.Contains("Row 5", warning, StringComparison.Ordinal);
+        Assert.Contains("non-ONL session must have both timeslot and room", warning, StringComparison.Ordinal);
+        var fatalWarning = Assert.Single(result.FatalWarnings);
+        Assert.Equal(warning, fatalWarning);
+    }
+
+    [Theory]
+    [InlineData("Thông báo sau", "1", "101-A")]
+    [InlineData("2", "Thông báo sau", "101-A")]
+    [InlineData("2", "1", "Thông báo sau")]
+    public void ParseQuarantinesUnresolvedPhysicalScheduleMarkers(string day, string period, string room)
+    {
+        var workbookPath = CreateWorkbook(TimetableParser.SheetName, new[]
+        {
+            Row(5, "K69I-IT1", "INT1000", "Programming", "3", "30", "LHP-1", "CL", "TH", day, period, room, "Alice"),
+            Row(6, "K69I-IT1", "INT1000", "Programming", "3", "30", "LHP-2", "CL", "LT", "2", "2", "102-A", "Bob"),
+        });
+
+        var result = TimetableParser.Parse(workbookPath);
+
+        Assert.Empty(result.FatalWarnings);
+        Assert.Equal(new uint[] { 5 }, result.SkippedRows);
+        var offering = Assert.Single(result.QuarantinedOfferings);
+        Assert.Equal("INT1000", offering.CourseCode);
+        Assert.Equal("LHP-1", offering.LhpCode);
+        Assert.Equal(1, offering.QuarantinedRowCount);
+        Assert.Equal(0, offering.ExcludedSessionCount);
+        Assert.Contains("Sheet3 row 5", offering.SourceLocations);
+        Assert.DoesNotContain(result.Problem.Sessions, session => session.LhpCode == "LHP-1");
+        Assert.Contains(result.Problem.Sessions, session => session.LhpCode == "LHP-2");
+    }
+
+    [Fact]
+    public void ParseQuarantinesAnEntireOfferingWhenOneComponentIsUnresolved()
+    {
+        var workbookPath = CreateWorkbook(TimetableParser.SheetName, new[]
+        {
+            Row(5, "K69I-IT1", "INT1000", "Programming", "3", "30", "LHP-1", "CL", "LT", "2", "1", "101-A", "Alice"),
+            Row(6, "K69I-IT1", "INT1000", "Programming", "3", "30", "LHP-1", "CL", "TH", "Thông báo sau", null, null, "Bob"),
+            Row(7, "K69I-IT1", "INT1000", "Programming", "3", "30", "LHP-2", "CL", "LT", "2", "2", "102-A", "Alice"),
+        });
+
+        var result = TimetableParser.Parse(workbookPath);
+
+        var offering = Assert.Single(result.QuarantinedOfferings);
+        Assert.Equal(1, offering.QuarantinedRowCount);
+        Assert.Equal(1, offering.ExcludedSessionCount);
+        Assert.DoesNotContain(result.Problem.Sessions, session => session.LhpCode == "LHP-1");
+        Assert.Contains(result.Problem.Sessions, session => session.LhpCode == "LHP-2");
+        Assert.DoesNotContain(result.Problem.AvailableRooms, room => room.Code == "101-A");
+        Assert.Contains(result.Problem.AvailableRooms, room => room.Code == "102-A");
+    }
+
+    [Fact]
+    public void ParseDoesNotQuarantineAnUnresolvedMarkerInNotes()
+    {
+        var workbookPath = CreateWorkbook(TimetableParser.SheetName, new[]
+        {
+            Row(5, "K69I-IT1", "INT1000", "Programming", "3", "30", "LHP-1", "CL", "LT", "2", "1", "101-A", "Alice", "Thông báo sau"),
+        });
+
+        var result = TimetableParser.Parse(workbookPath);
+
+        Assert.Single(result.Problem.Sessions);
+        Assert.Empty(result.QuarantinedOfferings);
+        Assert.Empty(result.FatalWarnings);
+    }
+
+    [Fact]
+    public void ParseIgnoresHiddenAndVeryHiddenTimetableSheets()
+    {
+        var headers = new RowDefinition(1, new Dictionary<uint, string?>
+        {
+            [1] = "Lớp", [3] = "Mã HP", [4] = "Môn", [5] = "TC",
+            [10] = "Mã LHP", [11] = "Nhóm", [13] = "LT/BT/TH",
+            [14] = "Thứ", [15] = "Ca", [16] = "GĐ", [17] = "Giảng viên",
+        });
+        var visibleRow = HeaderRow(2, "K71I-IT1", "INT7000", "Networks", "3", "30", null, "80",
+            "INT7000 1", "CL", "LT", "2", "1", "101-A", "Alice");
+        var hiddenLegacyRow = Row(5, "K69I-IT1", "INT6000", "Hidden legacy", "3", "30", "INT6000 1", "CL", "LT", "2", "1", "102-A", "Bob");
+        var workbookPath = CreateWorkbook(
+            new Dictionary<string, IReadOnlyCollection<RowDefinition>>
+            {
+                [TimetableParser.SheetName] = new[] { hiddenLegacyRow },
+                ["Visible timetable"] = new[] { headers, visibleRow },
+                ["Hidden timetable"] = new[] { headers, HeaderRow(2, "K71I-IT2", "INT7001", "Hidden", "3", "30", null, "80", "INT7001 1", "CL", "LT", "2", "1", "103-A", "Bob") },
+                ["Very hidden timetable"] = new[] { headers, HeaderRow(2, "K71I-IT3", "INT7002", "Very hidden", "3", "30", null, "80", "INT7002 1", "CL", "LT", "2", "1", "104-A", "Carol") },
+            },
+            new Dictionary<string, SheetStateValues>
+            {
+                [TimetableParser.SheetName] = SheetStateValues.Hidden,
+                ["Hidden timetable"] = SheetStateValues.Hidden,
+                ["Very hidden timetable"] = SheetStateValues.VeryHidden,
+            });
+
+        var result = TimetableParser.Parse(workbookPath);
+
+        var session = Assert.Single(result.Problem.Sessions);
+        Assert.Equal("INT7000", session.Course.Code);
+        Assert.Equal("sheet_2_row_2", session.SessionId);
+    }
+
+    [Fact]
+    public void ParseRejectsWorkbookContainingOnlyUnresolvedOfferings()
+    {
+        var workbookPath = CreateWorkbook(TimetableParser.SheetName, new[]
+        {
+            Row(5, "K69I-IT1", "INT1000", "Programming", "3", "30", "LHP-1", "CL", "TH", "Thông báo sau", null, null, "Alice"),
+        });
+
+        var exception = Assert.Throws<InvalidDataException>(() => TimetableParser.Parse(workbookPath));
+
+        Assert.Contains("only timetable offerings", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ParseAllKeepsAllValidSessionsWithoutCrossDepartmentBlocks()
     {
         var workbookPath = CreateWorkbook(TimetableParser.SheetName, new[]
@@ -267,7 +395,9 @@ public sealed class TimetableParserTests : IDisposable
     private string CreateWorkbook(string sheetName, IReadOnlyCollection<RowDefinition> rows)
         => CreateWorkbook(new Dictionary<string, IReadOnlyCollection<RowDefinition>> { [sheetName] = rows });
 
-    private string CreateWorkbook(IReadOnlyDictionary<string, IReadOnlyCollection<RowDefinition>> definitions)
+    private string CreateWorkbook(
+        IReadOnlyDictionary<string, IReadOnlyCollection<RowDefinition>> definitions,
+        Dictionary<string, SheetStateValues>? sheetStates = null)
     {
         var path = Path.Combine(_temporaryDirectory, $"{Guid.NewGuid():N}.xlsx");
         using var document = SpreadsheetDocument.Create(path, SpreadsheetDocumentType.Workbook);
@@ -285,12 +415,18 @@ public sealed class TimetableParserTests : IDisposable
             }
 
             worksheetPart.Worksheet = new Worksheet(sheetData);
-            sheets.Append(new Sheet
+            var sheet = new Sheet
             {
                 Id = workbookPart.GetIdOfPart(worksheetPart),
                 SheetId = sheetId++,
                 Name = sheetName,
-            });
+            };
+            if (sheetStates?.TryGetValue(sheetName, out var state) == true)
+            {
+                sheet.State = state;
+            }
+
+            sheets.Append(sheet);
         }
 
         workbookPart.Workbook.Save();
@@ -370,7 +506,8 @@ public sealed class TimetableParserTests : IDisposable
         string? day,
         string? period,
         string? room,
-        string? lecturer) => new(
+        string? lecturer,
+        string? note = null) => new(
         index,
         new Dictionary<uint, string?>
         {
@@ -386,6 +523,7 @@ public sealed class TimetableParserTests : IDisposable
             [14] = period,
             [15] = room,
             [16] = lecturer,
+            [17] = note,
         });
 
     private static RowDefinition HeaderRow(
