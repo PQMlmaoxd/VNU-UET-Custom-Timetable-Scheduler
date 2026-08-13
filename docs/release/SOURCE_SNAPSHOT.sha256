@@ -27,7 +27,7 @@ c1b4f1f1be7b865e0ba6cbb6466a83085ae0596b3ff64b28fdba831d33ae932a  ./scheduler/br
 8cdbfd567f5ba0047460c3d3ffcfdc3d1de956fb23b760ff0b40e702b3258639  ./scheduler/desktop/RELEASE_ACCEPTANCE_CHECKLIST.md
 005823c321edd0b9c11cb8cb0751a06a7a5aed5956cbe5c89ee2968dff087b09  ./scheduler/desktop/Scheduler.sln
 9690885e4ff5de555d7c0bd2964a91ce95102ad3d5c9fd87ad10bb6af6261cc5  ./scheduler/desktop/global.json
-95ad6692d052c3f6cd89292f811393093b6eceae977b63ae4abba30281941aef  ./scheduler/desktop/installer/SchedulerDesktop.iss
+40efb0ce494ff97a1ddc27b1e784c0c32b85ea3d6c97cb6f2ebbb83930edc1d6  ./scheduler/desktop/installer/SchedulerDesktop.iss
 2c75897ee8d30ade8a5f96706b56cc8202c4705e91d1d727b7ceb8d974f4f65d  ./scheduler/desktop/native/FormalVerification/README.md
 4e6f12c6201494552cbb886e7a4f80b39d8a15e5850851e597fb39ed01570a03  ./scheduler/desktop/native/FormalVerification/cake-lpr-provenance.json
 88523812a6341b35050c115ea86e04f6853427e50137bee6b675828db5eb30df  ./scheduler/desktop/native/FormalVerification/third_party/cake_lpr/.gitmodules
@@ -539,7 +539,7 @@ b0223d532c9b6ff9f41c6257fd433fa91c5543b3fef9bf7780a58725b85df168  ./scheduler/de
 0b9316f07635cb006e202285009ce5e71cb245c304b389b6f5b8023355d68b3c  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/usage/run.sh
 12166962957479fef413c853cc4f7e8f78ae3d7d5df26768ee57c8c637fd2016  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/usage/variable-too-large.cnf
 a4f3d993819cf870c683a5b20ae6afb9f64c87727ad447c58e9b95cf5a1ccec1  ./scheduler/desktop/scripts/build-cake-lpr.sh
-f2f9e5b165382d5c4e4b27d747b9302a0939bfba089b1db7633b0b905c8703d8  ./scheduler/desktop/scripts/build-installer.ps1
+cfdf18bc442d8486de14f5c6923d7e1c0abbe0c223124e1a229919931d81310c  ./scheduler/desktop/scripts/build-installer.ps1
 5128dd2aa85016cbdb923cb7a25858f0e3f1f322c755efe7f75312f44ccf0acf  ./scheduler/desktop/scripts/build-windows-solver-worker.sh
 3deefa018203b77a2df5be414a11b94f43cbc8aaf7d6cf01a57daeb4d1ec5932  ./scheduler/desktop/scripts/generate-sbom.ps1
 cc01325b2cd5e0ce274a30ca9aff30169acf5f2ee6bf7661d9efa2f51d7e159e  ./scheduler/desktop/scripts/package-release-assets.ps1
