@@ -1,42 +1,68 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-if [ "$#" -ne 2 ]; then
-    echo "usage: update.sh HOL_commit_hash CakeML_commit_hash"
-else
+repository_root=$(cd -- "$(dirname -- "$0")/../../../../../.." && pwd)
+lock_file="$repository_root/scheduler/desktop/native/FormalVerification/cake-lpr-submodules.lock"
+cake_root="$repository_root/scheduler/desktop/native/FormalVerification/third_party/cake_lpr"
 
-HOLHASH=$1
-CMLHASH=$2
+usage() {
+  cat <<'EOF'
+Usage: update.sh <CakeML_commit> <HOL4_commit>
 
-echo '*** ********************************************* ***'
-echo '*** WARNING: make sure .S files have been updated ***'
-echo '*** ********************************************* ***'
+Updates the two pinned proof-source submodules to explicit commits. This script
+never follows a remote branch and never changes generated CakeLPR assembly.
+Review the resulting diff and regenerate cake-lpr-vendored-files.sha256 only
+after intentionally updating the generated checker sources.
+EOF
+}
 
-# Ensure submodules are init-ed
-# git submodule update --init --recursive
-
-# Pull latest commits
-git submodule update --recursive --remote
-
-# Checkout the commits
-cd HOL ; git checkout $HOLHASH ; cd ..
-cd cakeml ; git checkout $CMLHASH ; cd ..
-
-# Update README.md
-sed -i "s/HOL4: .*/HOL4: $HOLHASH/" README.md
-sed -i "s/CakeML: .*/CakeML: $CMLHASH/" README.md
-
-# MD5 checksum of the relevant executable files
-sha256sum Makefile basis_ffi.c cake_lpr.S cake_lpr_arm8.S > cake_lpr.sha256
-
-# Stage everything for commit
-git add HOL
-git add cakeml
-git add README.md
-git add cake_lpr.sha256
-git add cake_lpr.S
-git add cake_lpr_arm8.S
-git add basis_ffi.c
-git add Makefile
-
+if [[ "$#" -eq 1 && ("$1" = "--help" || "$1" = "-h") ]]; then
+  usage
+  exit 0
 fi
+
+if [[ "$#" -ne 2 ]]; then
+  usage >&2
+  exit 2
+fi
+
+[[ -f "$repository_root/.git" || -d "$repository_root/.git" ]] || {
+  echo 'Run this script from a checked-out superproject.' >&2
+  exit 2
+}
+
+declare -A requested_commit=(
+  [cakeml]="$1"
+  [HOL]="$2"
+)
+
+for module in cakeml HOL; do
+  path="$cake_root/$module"
+  commit=${requested_commit[$module]}
+  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "Invalid commit: $commit" >&2
+    exit 2
+  }
+  git -C "$path" fetch --no-tags origin "$commit"
+  git -C "$path" checkout --detach "$commit"
+done
+
+temporary_lock=$(mktemp)
+trap 'rm -f "$temporary_lock"' EXIT
+while read -r commit path url extra; do
+  [[ -z "${commit:-}" || "$commit" == \#* ]] && continue
+  case "$path" in
+    ./scheduler/desktop/native/FormalVerification/third_party/cake_lpr/cakeml)
+      commit=${requested_commit[cakeml]}
+      ;;
+    ./scheduler/desktop/native/FormalVerification/third_party/cake_lpr/HOL)
+      commit=${requested_commit[HOL]}
+      ;;
+  esac
+  printf '%s %s %s\n' "$commit" "$path" "$url"
+done < "$lock_file" > "$temporary_lock"
+mv "$temporary_lock" "$lock_file"
+trap - EXIT
+
+git -C "$repository_root" add "$lock_file" "$cake_root/cakeml" "$cake_root/HOL"
+echo 'Pinned CakeML and HOL4 submodules. Review and commit the staged gitlinks.'

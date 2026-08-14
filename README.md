@@ -93,8 +93,11 @@ the matching LRAT proof. The result is accepted only when the checker exits
 successfully and prints `s VERIFIED UNSAT`. This establishes unsatisfiability
 of that CNF under the stated toolchain assumptions; it does not independently
 prove that the timetable parser or CNF encoder models the product semantics.
-The pinned CakeLPR source used by this optional workflow is included under
-`scheduler/desktop/native/FormalVerification/third_party/cake_lpr`.
+The generated CakeLPR checker source used by this optional workflow is included
+under `scheduler/desktop/native/FormalVerification/third_party/cake_lpr`.
+The pinned CakeML and HOL4 proof/compiler sources are Git submodules. Clone the
+repository with `--recurse-submodules` when the complete provenance tree is
+needed.
 
 The package may contain course, lecturer, LHP, and session identifiers. Review
 it before sharing. See [`docs/policies/DATA_HANDLING.md`](docs/policies/DATA_HANDLING.md).

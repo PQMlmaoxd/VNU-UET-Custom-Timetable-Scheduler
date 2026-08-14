@@ -1,0 +1,99 @@
+name: CakeLPR Provenance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.gitmodules'
+      - 'scheduler/desktop/native/FormalVerification/**'
+      - 'scheduler/desktop/scripts/build-cake-lpr.sh'
+      - 'scheduler/desktop/scripts/package-cake-lpr-source-bundle.sh'
+      - 'scheduler/desktop/scripts/verify-cake-lpr-provenance.sh'
+  pull_request:
+    paths:
+      - '.gitmodules'
+      - 'scheduler/desktop/native/FormalVerification/**'
+      - 'scheduler/desktop/scripts/build-cake-lpr.sh'
+      - 'scheduler/desktop/scripts/package-cake-lpr-source-bundle.sh'
+      - 'scheduler/desktop/scripts/verify-cake-lpr-provenance.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cake-lpr-provenance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify pinned CakeLPR sources
+    runs-on: windows-2022
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout source and pinned submodules
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          submodules: false
+          persist-credentials: false
+
+      - name: Configure Windows long paths
+        shell: powershell
+        run: git config --global core.longpaths true
+
+      - name: Initialize pinned submodules
+        shell: powershell
+        run: |
+          git submodule sync --recursive
+          git -c core.longpaths=true submodule update --init --recursive
+
+      - name: Verify source snapshot and gitlinks
+        shell: bash
+        run: ./scheduler/desktop/scripts/verify-source-snapshot.sh
+
+      - name: Verify initialized CakeML and HOL4 sources
+        shell: bash
+        run: ./scheduler/desktop/scripts/verify-cake-lpr-provenance.sh --require-initialized-submodules
+
+      - name: Install MSYS2 MINGW64 toolchain
+        uses: msys2/setup-msys2@40677d36a502eb2cf0fb808cc9dec31bf6152638 # v2.28.0
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-binutils
+
+      - name: Build and test CakeLPR checker
+        shell: msys2 {0}
+        run: ./scheduler/desktop/scripts/build-cake-lpr.sh
+
+      - name: Package recursive source bundle
+        shell: msys2 {0}
+        run: >-
+          ./scheduler/desktop/scripts/package-cake-lpr-source-bundle.sh
+          ./scheduler/desktop/artifacts/cake-lpr-source.tar.gz
+
+      - name: Verify recursive source bundle contents
+        shell: msys2 {0}
+        run: |
+          tar -tzf scheduler/desktop/artifacts/cake-lpr-source.tar.gz > bundle-files.txt
+          grep -F 'scheduler/desktop/native/FormalVerification/third_party/cake_lpr/cakeml/examples/lpr_checker/lprScript.sml' bundle-files.txt
+          grep -F 'scheduler/desktop/native/FormalVerification/third_party/cake_lpr/HOL/COPYRIGHT' bundle-files.txt
+          if grep -E '(^|/)\.git(/|$)' bundle-files.txt; then
+            echo 'Bundle contains a .git directory.' >&2
+            exit 1
+          fi
+
+      - name: Upload recursive source bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cake-lpr-source-${{ github.run_number }}
+          path: |
+            scheduler/desktop/artifacts/cake-lpr-source.tar.gz
+            scheduler/desktop/artifacts/cake-lpr-source.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 14

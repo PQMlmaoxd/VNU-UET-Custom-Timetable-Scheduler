@@ -38,7 +38,7 @@ Windows 2022 environment:
 1. Verify `docs/release/SOURCE_SNAPSHOT.sha256` when the manifest is present.
 2. Install .NET SDK `9.0.312` and Node.js `24.12.0`.
 3. Install the MSYS2 MINGW64 native toolchain and build the pinned CaDiCaL worker.
-4. Build the pinned optional CakeLPR checker source.
+4. Verify the pinned CakeML/HOL4 gitlinks and build the optional CakeLPR checker source.
 5. Run locked NuGet restore (`--locked-mode`).
 6. Build and run the fixture-independent .NET tests with warnings treated as errors.
 7. Run frontend unit tests, production build and Playwright E2E tests.
@@ -91,10 +91,12 @@ versions. It then:
 4. Downloads and verifies the configured WebView2 runtime.
 5. Installs and version-checks Inno Setup 6.7.1.
 6. Builds the installer and runs silent install, worker and uninstall smoke tests.
-7. Creates the self-contained ZIP, installer, diagnostics executable, and SHA-256 checksum file. The
-     release manifest, SBOM and third-party notices remain inside the published tree and ZIP.
-8. Creates a draft GitHub Release, uploads and verifies all four product assets, then publishes the draft
-     using `GITHUB_TOKEN`; GitHub also provides source-code ZIP and tar archives.
+7. Creates the self-contained ZIP, installer, diagnostics executable, recursive CakeML/HOL4 source
+     bundle, and checksum files. The release manifest, SBOM and third-party notices remain inside the
+     published tree and ZIP.
+8. Creates a draft GitHub Release, uploads and verifies all six product assets, then publishes the draft
+     using `GITHUB_TOKEN`; GitHub also provides source-code ZIP and tar archives, but those automatic
+     archives contain submodule gitlinks rather than submodule working-tree contents.
 
 The release job fails intentionally when the WebView2 variables are missing,
 when any version/hash check fails, when tests fail, or when the installer smoke
@@ -118,6 +120,8 @@ The GitHub Release contains these uploaded assets:
 - `VNU-UET-Custom-Timetable-Scheduler-<version>-win-x64.zip`: self-contained publish directory.
 - `VNU-UET-Custom-Timetable-Scheduler-<version>-Diagnostics-win-x64.exe`: self-contained, single-file diagnostics CLI.
 - `VNU-UET-Custom-Timetable-Scheduler-<version>-SHA256SUMS.txt`: SHA-256 values for the installer, ZIP, and diagnostics binary.
+- `VNU-UET-Custom-Timetable-Scheduler-<version>-Source-with-submodules.tar.gz`: recursive source bundle containing the pinned CakeML and HOL4 working trees.
+- `VNU-UET-Custom-Timetable-Scheduler-<version>-Source-with-submodules.tar.gz.sha256`: SHA-256 value for the recursive source bundle.
 
 The diagnostics asset is built from `Scheduler.Diagnostics`, smoke-tested with
 `help`, `version`, `self-test`, and JSON `doctor`, and is copied only when the
@@ -126,8 +130,11 @@ privacy defaults are documented in
 `scheduler/desktop/src/Scheduler.Diagnostics/README.md`.
 
 GitHub additionally provides `Source code (zip)` and `Source code (tar.gz)` for
-the release tag. The ZIP itself retains `release-manifest.json`, `sbom.cdx.json`
-and `THIRD_PARTY_NOTICES.md` from the publish directory.
+the release tag. Those automatic archives do not recursively materialize Git
+submodules. The explicit source bundle above is the reproducible archive for
+the complete CakeML/HOL4 provenance tree. The application ZIP itself retains
+`release-manifest.json`, `sbom.cdx.json` and `THIRD_PARTY_NOTICES.md` from the
+publish directory.
 
 ## Manual Acceptance For An Official Installer
 

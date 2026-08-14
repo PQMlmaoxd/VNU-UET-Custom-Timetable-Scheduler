@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 set -eu
 
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
@@ -17,13 +17,20 @@ canonical_manifest=$(mktemp)
 trap 'rm -f "$actual_manifest" "$expected_manifest" "$canonical_manifest"' EXIT HUP INT TERM
 
 # Hash committed Git blobs so Windows checkout line-ending and symlink handling
-# cannot change the source snapshot result.
-git ls-files | while IFS= read -r path; do
+# cannot change the source snapshot result. Gitlink entries are verified by the
+# CakeLPR provenance lock instead of being treated as blobs.
+git ls-files --stage | while IFS=$' \t' read -r mode object stage path; do
+  [ "$mode" = "160000" ] && continue
   [ "$path" = "${manifest_path#./}" ] && continue
   printf '%s  ./%s\n' \
     "$(git cat-file blob "HEAD:$path" | sha256sum | awk '{ print $1 }')" \
     "$path"
 done > "$actual_manifest"
+
+provenance_script=scheduler/desktop/scripts/verify-cake-lpr-provenance.sh
+if [ -x "$provenance_script" ]; then
+  "$provenance_script" --gitlinks-only
+fi
 
 LC_ALL=C sort "$manifest_path" > "$expected_manifest"
 LC_ALL=C sort "$actual_manifest" > "$canonical_manifest"

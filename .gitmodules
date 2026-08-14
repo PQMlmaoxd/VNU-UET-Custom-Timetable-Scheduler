@@ -1,0 +1,6 @@
+[submodule "scheduler/desktop/native/FormalVerification/third_party/cake_lpr/cakeml"]
+	path = scheduler/desktop/native/FormalVerification/third_party/cake_lpr/cakeml
+	url = https://github.com/CakeML/cakeml.git
+[submodule "scheduler/desktop/native/FormalVerification/third_party/cake_lpr/HOL"]
+	path = scheduler/desktop/native/FormalVerification/third_party/cake_lpr/HOL
+	url = https://github.com/HOL-Theorem-Prover/HOL.git

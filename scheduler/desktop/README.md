@@ -233,9 +233,22 @@ or deliberately update `global.json` in a reviewed dependency change.
 
 ### Formal verification tools
 
-The complete pinned CakeLPR source is under
-`native/FormalVerification/third_party/cake_lpr`. Build the optional Windows
-checker with:
+The generated CakeLPR checker source is under
+`native/FormalVerification/third_party/cake_lpr`. Its pinned CakeML and HOL4
+proof/compiler sources are Git submodules. Clone the repository with:
+
+```bash
+git clone --recurse-submodules <repository-url>
+```
+
+For an existing clone, initialize the pinned sources with:
+
+```bash
+git submodule sync --recursive
+git submodule update --init --recursive
+```
+
+Build the optional Windows checker with:
 
 ```bash
 cd scheduler/desktop

@@ -49,7 +49,18 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
           fetch-depth: 0
+          submodules: false
           persist-credentials: false
+
+      - name: Configure Windows long paths
+        shell: powershell
+        run: git config --global core.longpaths true
+
+      - name: Initialize pinned submodules
+        shell: powershell
+        run: |
+          git submodule sync --recursive
+          git -c core.longpaths=true submodule update --init --recursive
 
       - name: Verify public source snapshot
         if: ${{ hashFiles('docs/release/SOURCE_SNAPSHOT.sha256') != '' }}
@@ -121,6 +132,7 @@ jobs:
           msystem: MINGW64
           update: false
           install: >-
+            git
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-make
             mingw-w64-x86_64-binutils
@@ -252,6 +264,32 @@ jobs:
           -DiagnosticsPath ./scheduler/desktop/artifacts/diagnostics-windows-x64/Scheduler.Diagnostics.exe
           -OutputPath ./scheduler/desktop/artifacts/release-assets
 
+      - name: Package recursive CakeML and HOL4 source
+        shell: msys2 {0}
+        env:
+          RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
+        run: >-
+          ./scheduler/desktop/scripts/package-cake-lpr-source-bundle.sh
+          ./scheduler/desktop/artifacts/release-assets/VNU-UET-Custom-Timetable-Scheduler-$RELEASE_VERSION-Source-with-submodules.tar.gz
+
+      - name: Refresh release checksums
+        shell: powershell
+        env:
+          RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
+        run: |
+          $releaseDirectory = 'scheduler/desktop/artifacts/release-assets'
+          $mainChecksumName = "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-SHA256SUMS.txt"
+          $sourceChecksumName = "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-Source-with-submodules.tar.gz.sha256"
+          $checksumNames = @($mainChecksumName, $sourceChecksumName)
+          $assetFiles = @(Get-ChildItem -LiteralPath $releaseDirectory -File | Where-Object {
+              $checksumNames -notcontains $_.Name
+          } | Sort-Object Name)
+          $lines = @($assetFiles | ForEach-Object {
+              "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant(), $_.Name
+          })
+          $encoding = [System.Text.UTF8Encoding]::new($false)
+          [System.IO.File]::WriteAllLines((Join-Path $releaseDirectory $mainChecksumName), $lines, $encoding)
+
       - name: Upload release assets as workflow artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -277,6 +315,8 @@ jobs:
               "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-win-x64.zip"
               "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-Diagnostics-win-x64.exe"
               "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-SHA256SUMS.txt"
+              "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-Source-with-submodules.tar.gz"
+              "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-Source-with-submodules.tar.gz.sha256"
           ) | Sort-Object
           $localNames = @($assets | ForEach-Object { [System.IO.Path]::GetFileName($_) } | Sort-Object)
           if (($expectedNames -join "`n") -ne ($localNames -join "`n")) {
@@ -289,8 +329,12 @@ jobs:
           if ($checksumFiles.Count -ne 1) {
               throw 'Exactly one release checksum file is required.'
           }
+          $checksumNames = @(
+              "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-SHA256SUMS.txt"
+              "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-Source-with-submodules.tar.gz.sha256"
+          )
           $expectedChecksums = @($assets | Where-Object {
-              [System.IO.Path]::GetFileName($_) -ne "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-SHA256SUMS.txt"
+              $checksumNames -notcontains [System.IO.Path]::GetFileName($_)
           } | Sort-Object | ForEach-Object {
               "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash.ToLowerInvariant(), [System.IO.Path]::GetFileName($_)
           })

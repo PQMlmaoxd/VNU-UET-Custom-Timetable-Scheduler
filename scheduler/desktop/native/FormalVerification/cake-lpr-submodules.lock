@@ -1,0 +1,3 @@
+# commit path url
+fb377b4bb704497c921cde68ccc8da3b4f0e9132 ./scheduler/desktop/native/FormalVerification/third_party/cake_lpr/cakeml https://github.com/CakeML/cakeml.git
+0ae7030322cdf2b0d46dc9d5503e2d5eae2fa726 ./scheduler/desktop/native/FormalVerification/third_party/cake_lpr/HOL https://github.com/HOL-Theorem-Prover/HOL.git
