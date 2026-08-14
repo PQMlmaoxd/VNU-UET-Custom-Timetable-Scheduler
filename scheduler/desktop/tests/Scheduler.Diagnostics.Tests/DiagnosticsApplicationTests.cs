@@ -67,4 +67,37 @@ public sealed class DiagnosticsApplicationTests
             $"{DiagnosticsReportFactory.ToolName} {DiagnosticsReportFactory.ToolVersion}",
             output.ToString().Trim());
     }
+
+    [Fact]
+    public async Task NoArgumentsRunPrivacySafeAutomaticDoctor()
+    {
+        var privateDirectory = Path.Combine(Path.GetTempPath(), "private-diagnostics-course-lecturer");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = await DiagnosticsApplication.RunAsync(
+            [], output, error, executableDirectory: privateDirectory);
+
+        Assert.Equal((int)DiagnosticsExitCode.MissingTarget, exitCode);
+        Assert.Contains("managed_protocol_contract: passed", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains("app.app_target: missing", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains("worker.worker_target: missing", output.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(privateDirectory, output.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("workbook.", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExplicitDoctorDoesNotDiscoverSiblingTargets()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = await DiagnosticsApplication.RunAsync(
+            ["doctor"], output, error, executableDirectory: Path.GetTempPath());
+
+        Assert.Equal((int)DiagnosticsExitCode.Success, exitCode);
+        Assert.Contains("managed_protocol_contract: passed", output.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("app.", output.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("worker.", output.ToString(), StringComparison.Ordinal);
+    }
 }

@@ -36,7 +36,8 @@ solutions returned by SAT; it does not claim global movement optimality.
   checks the isolated worker, packaged application structure/manifest, and XLSX/PDF input
   without launching the UI. Its commands, privacy defaults, and Windows single-file
   publish script are documented in `src/Scheduler.Diagnostics/README.md`. The tagged
-  release publishes it as a separate diagnostics asset
+  release bundles it with the installer and portable ZIP, adds a Start Menu-only
+  Diagnostics shortcut, and also publishes it as a separate diagnostics asset
   `VNU-UET-Custom-Timetable-Scheduler-<version>-Diagnostics-win-x64.exe`.
 - The host and React UI share `system`, `light`, and `dark` theme preferences. The
   choice is stored locally, applied before the document loads, and synchronizes the
@@ -109,10 +110,11 @@ desktop release package, run:
 .\scripts\publish-windows-diagnostics.ps1
 ```
 
-The tagged release workflow runs this command after the release gate. Release
-packaging then requires the resulting exact file
-`artifacts/diagnostics-windows-x64/Scheduler.Diagnostics.exe` and copies it to the
-product-qualified diagnostics asset name above.
+The release gate runs this command, bundles the resulting exact file in the portable
+and installer package before metadata is finalized, and copies it to the
+product-qualified diagnostics asset name above. Launching Diagnostics without
+arguments tests sibling app/worker files without opening the GUI and waits only for
+an Explorer-owned console; explicit CLI commands always return immediately.
 
 The last command is the Debug development host. `--web-root` and
 `SCHEDULER_WEB_ROOT` are unavailable in Release builds; release packaging must copy the
@@ -174,8 +176,9 @@ for a license or vulnerability review.
 
 The installer is an Inno Setup per-user installation. It writes under
 `%LOCALAPPDATA%\Programs\VNU-UET Custom Timetable Scheduler`, never needs administrator rights,
-includes the published application, native worker, release manifest, and CaDiCaL
-license notices, SBOM, and creates no post-install auto-run action.
+includes the published application, tester diagnostics CLI, native worker, release
+manifest, and CaDiCaL license notices, SBOM, and creates no post-install auto-run
+action.
 
 Build and smoke-test an installer on a machine that already has the WebView2
 Runtime and Inno Setup 6 installed:

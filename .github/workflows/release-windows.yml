@@ -162,17 +162,6 @@ jobs:
           -ReleaseVersion $env:SCHEDULER_RELEASE_VERSION
           -SkipExternalFixtureTests
 
-      - name: Publish and smoke-test standalone diagnostics
-        shell: powershell
-        env:
-          RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
-        run: >-
-          ./scheduler/desktop/scripts/publish-windows-diagnostics.ps1
-          -Version $env:RELEASE_VERSION
-          -OutputPath ./scheduler/desktop/artifacts/diagnostics-windows-x64
-          -WorkerPath ./scheduler/desktop/native/SolverWorker/out/windows-x64/SolverWorker.exe
-          -AppPath ./scheduler/desktop/artifacts/windows-x64
-
       - name: Download and verify WebView2 runtime
         shell: powershell
         env:
@@ -243,6 +232,7 @@ jobs:
           -SolverWorkerPath ./scheduler/desktop/native/SolverWorker/out/windows-x64/SolverWorker.exe
           -Version $env:RELEASE_VERSION
           -PublishPath ./scheduler/desktop/artifacts/windows-x64
+          -DiagnosticsPath ./scheduler/desktop/artifacts/diagnostics-windows-x64/Scheduler.Diagnostics.exe
           -OutputPath ./scheduler/desktop/artifacts/installer
           -InnoSetupCompilerPath $env:INNO_SETUP_PATH
           -WebView2InstallerPath $env:WEBVIEW2_PATH
@@ -250,6 +240,7 @@ jobs:
           -WebView2SourceUrl $env:WEBVIEW2_URL
           -SkipFrontendBuild
           -SkipPublish
+          -SkipSbom
           -SmokeTest
 
       - name: Package release assets
@@ -272,24 +263,6 @@ jobs:
           ./scheduler/desktop/scripts/package-cake-lpr-source-bundle.sh
           ./scheduler/desktop/artifacts/release-assets/VNU-UET-Custom-Timetable-Scheduler-$RELEASE_VERSION-Source-with-submodules.tar.gz
 
-      - name: Refresh release checksums
-        shell: powershell
-        env:
-          RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
-        run: |
-          $releaseDirectory = 'scheduler/desktop/artifacts/release-assets'
-          $mainChecksumName = "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-SHA256SUMS.txt"
-          $sourceChecksumName = "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-Source-with-submodules.tar.gz.sha256"
-          $checksumNames = @($mainChecksumName, $sourceChecksumName)
-          $assetFiles = @(Get-ChildItem -LiteralPath $releaseDirectory -File | Where-Object {
-              $checksumNames -notcontains $_.Name
-          } | Sort-Object Name)
-          $lines = @($assetFiles | ForEach-Object {
-              "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant(), $_.Name
-          })
-          $encoding = [System.Text.UTF8Encoding]::new($false)
-          [System.IO.File]::WriteAllLines((Join-Path $releaseDirectory $mainChecksumName), $lines, $encoding)
-
       - name: Upload release assets as workflow artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -305,7 +278,7 @@ jobs:
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
           RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
         run: |
-          $assets = @(Get-ChildItem -LiteralPath 'scheduler/desktop/artifacts/release-assets' -File | Select-Object -ExpandProperty FullName)
+          $assets = @(Get-ChildItem -LiteralPath 'scheduler/desktop/artifacts/release-assets' -File | Sort-Object Name | Select-Object -ExpandProperty FullName)
           if ($assets.Count -eq 0) {
               throw 'No release assets were produced.'
           }
@@ -314,33 +287,11 @@ jobs:
               "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-Setup.exe"
               "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-win-x64.zip"
               "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-Diagnostics-win-x64.exe"
-              "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-SHA256SUMS.txt"
               "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-Source-with-submodules.tar.gz"
-              "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-Source-with-submodules.tar.gz.sha256"
           ) | Sort-Object
           $localNames = @($assets | ForEach-Object { [System.IO.Path]::GetFileName($_) } | Sort-Object)
           if (($expectedNames -join "`n") -ne ($localNames -join "`n")) {
               throw "Local release asset set mismatch. Expected: $($expectedNames -join ', '); actual: $($localNames -join ', ')."
-          }
-
-          $checksumFiles = @($assets | Where-Object {
-              [System.IO.Path]::GetFileName($_) -eq "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-SHA256SUMS.txt"
-          })
-          if ($checksumFiles.Count -ne 1) {
-              throw 'Exactly one release checksum file is required.'
-          }
-          $checksumNames = @(
-              "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-SHA256SUMS.txt"
-              "VNU-UET-Custom-Timetable-Scheduler-$env:RELEASE_VERSION-Source-with-submodules.tar.gz.sha256"
-          )
-          $expectedChecksums = @($assets | Where-Object {
-              $checksumNames -notcontains [System.IO.Path]::GetFileName($_)
-          } | Sort-Object | ForEach-Object {
-              "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash.ToLowerInvariant(), [System.IO.Path]::GetFileName($_)
-          })
-          $actualChecksums = @(Get-Content -LiteralPath $checksumFiles[0])
-          if (($expectedChecksums -join "`n") -ne ($actualChecksums -join "`n")) {
-              throw 'Release checksum file does not match the generated release assets.'
           }
 
           & gh release create $env:RELEASE_TAG `

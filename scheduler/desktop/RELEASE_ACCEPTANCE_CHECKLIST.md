@@ -12,7 +12,8 @@ is unverified; record the blocker and its owner instead.
 - [ ] The exact `SolverWorker.exe` used for the release passed `--version`,
       `--self-test`, and `--protocol-self-test`.
 - [ ] The standalone `Scheduler.Diagnostics.exe` passed its publish smoke tests and
-      is recorded under the exact product-qualified diagnostics asset name.
+       matches the binary bundled in the portable ZIP and installer, and is recorded
+       under the exact product-qualified diagnostics asset name.
 - [ ] CaDiCaL source provenance remains `rel-3.0.1`, commit
       `c60730422e758ef1cebe7aeddf2dda31c996bf04`; its notice and license are in
       the published directory and installer.
@@ -51,12 +52,15 @@ output and artifact hashes with the release record, never in the support ZIP.
        they were not skipped. `SCHEDULER_TEST_WORKBOOK` and `SCHEDULER_TEST_PDF`
        identify the authorized protected fixtures when `-RequireExternalFixtures` is used.
 - [ ] React tests and production bundle build passed.
-- [ ] Publish directory contains `Scheduler.Desktop.exe`, `SolverWorker.exe`,
+- [ ] Publish directory contains `Scheduler.Desktop.exe`, `Scheduler.Diagnostics.exe`, `SolverWorker.exe`,
       `web/index.html`, `release-manifest.json`, `THIRD_PARTY_NOTICES.md`, and
       `sbom.cdx.json`.
 - [ ] Installer silent install/uninstall smoke test passed.
 - [ ] Diagnostics `help`, `version`, `self-test`, and JSON `doctor` smoke tests passed;
        the CLI asset is self-contained `win-x64` output.
+- [ ] Double-clicking installed Diagnostics runs the privacy-safe automatic app/worker
+       report, shows no private paths, and waits for a key; an explicit command exits
+       without waiting.
 
 ## 3. Clean-Machine Installation
 
@@ -70,7 +74,9 @@ disk, WebView2 state, and installer SHA-256.
       message and leave no partial application installation.
 - [ ] Install the approved WebView2 Runtime using the documented release input.
 - [ ] Run the installer normally. It must install without administrator elevation
-      and create the requested Start Menu/desktop shortcuts only.
+       and create the requested Start Menu/desktop shortcuts only.
+- [ ] Run the Start Menu Diagnostics shortcut. It must validate the installed app and
+       worker without opening the GUI or disclosing private paths.
 - [ ] Disconnect all network interfaces. Start the installed application and
       confirm it opens without network access or a local HTTP listener.
 - [ ] Uninstall and confirm the application directory, shortcuts, and uninstall

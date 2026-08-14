@@ -18,6 +18,13 @@ dotnet run --project src/Scheduler.Diagnostics -- workbook --workbook C:\private
 dotnet run --project src/Scheduler.Diagnostics -- doctor --worker .\native\SolverWorker\out\windows-x64\SolverWorker.exe
 ```
 
+Running the executable with no arguments is the tester-friendly mode. It runs a
+privacy-safe `doctor` report against sibling `Scheduler.Desktop.exe` and
+`SolverWorker.exe`, never searches for a workbook, and returns `4` when either
+sibling is absent. When Explorer creates a console only for this executable, the
+report remains visible until a key is pressed. Commands with arguments and all
+redirected invocations never wait.
+
 `worker` uses only the native worker's fixed version/self-test flags and two embedded
 one-variable protocol cases: one known SAT request and one known UNSAT request. It
 does not accept arbitrary SAT/CNF input. Process output and wait time are bounded.
@@ -57,12 +64,16 @@ The standalone artifact is self-contained, single-file, untrimmed `win-x64` outp
 ```
 
 The default output is `artifacts/diagnostics-windows-x64/Scheduler.Diagnostics.exe`.
-The script smoke-tests `help`, the requested `version`, `self-test`, and versioned
-JSON `doctor` output. In the release workflow it also runs the CLI against the
-just-built worker and desktop publish directory. Running it locally creates only the
-standalone diagnostics directory. The tagged release workflow runs it after the release gate, then
-`package-release-assets.ps1` copies the exact executable into the release assets:
+The script smoke-tests automatic no-argument behavior, `help`, the requested
+`version`, `self-test`, and versioned JSON `doctor` output. The release gate copies
+that exact executable into the final desktop package before it creates the SBOM and
+manifest. It remains available as the standalone release asset:
 `VNU-UET-Custom-Timetable-Scheduler-<version>-Diagnostics-win-x64.exe`.
+
+The installer and portable ZIP also contain `Scheduler.Diagnostics.exe`. Start Menu
+contains a Diagnostics shortcut; double-click it after installation to test the
+installed application and worker. A downloaded standalone executable performs full
+checks only when placed beside an extracted or installed desktop package.
 
 To exercise the same packaging handoff locally after producing the desktop publish
 directory and installer, pass the executable path, not its containing directory:

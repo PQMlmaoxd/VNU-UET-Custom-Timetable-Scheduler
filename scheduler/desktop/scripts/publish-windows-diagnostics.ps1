@@ -32,19 +32,30 @@ if (-not (Test-Path $projectPath -PathType Leaf)) {
 if ($LASTEXITCODE -ne 0) { throw "Diagnostics locked restore failed." }
 
 Remove-Item -Recurse -Force $outputFullPath -ErrorAction SilentlyContinue
-& dotnet publish $projectPath `
-    --configuration $Configuration `
-    --runtime win-x64 `
-    --self-contained true `
-    -p:PublishSingleFile=true `
-    -p:PublishTrimmed=false `
-    -p:DebugSymbols=false `
-    -p:DebugType=None `
-    -p:IncludeNativeLibrariesForSelfExtract=true `
-    "-p:Version=$Version" `
-    --no-restore `
-    --output $outputFullPath
-if ($LASTEXITCODE -ne 0) { throw "Diagnostics publish failed." }
+$published = $false
+foreach ($attempt in 1..3) {
+    & dotnet publish $projectPath `
+        --configuration $Configuration `
+        --runtime win-x64 `
+        --self-contained true `
+        -p:PublishSingleFile=true `
+        -p:PublishTrimmed=false `
+        -p:DebugSymbols=false `
+        -p:DebugType=None `
+        -p:IncludeNativeLibrariesForSelfExtract=true `
+        "-p:Version=$Version" `
+        --no-restore `
+        --output $outputFullPath
+    if ($LASTEXITCODE -eq 0) {
+        $published = $true
+        break
+    }
+
+    if ($attempt -lt 3) {
+        Start-Sleep -Seconds 2
+    }
+}
+if (-not $published) { throw "Diagnostics publish failed after three attempts." }
 
 $diagnosticsPath = Join-Path $outputFullPath "Scheduler.Diagnostics.exe"
 if (-not (Test-Path $diagnosticsPath -PathType Leaf)) {
@@ -59,7 +70,7 @@ if ($unexpectedFiles.Count -gt 0) {
 
 function Invoke-DiagnosticsSmoke {
     param(
-        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Arguments,
         [Parameter(Mandatory = $true)][int]$ExpectedExitCode
     )
 
@@ -71,6 +82,12 @@ function Invoke-DiagnosticsSmoke {
     return $smokeOutput
 }
 
+$automaticOutput = Invoke-DiagnosticsSmoke -Arguments @() -ExpectedExitCode 4
+foreach ($expectedLine in @("managed_protocol_contract: passed", "app.app_target: missing", "worker.worker_target: missing")) {
+    if ($automaticOutput -notmatch [regex]::Escape($expectedLine)) {
+        throw "Diagnostics automatic smoke report is missing: $expectedLine"
+    }
+}
 Invoke-DiagnosticsSmoke -Arguments @("help") -ExpectedExitCode 0 | Out-Null
 $versionOutput = Invoke-DiagnosticsSmoke -Arguments @("version") -ExpectedExitCode 0
 if ($versionOutput.Trim() -ne "scheduler-diagnostics $Version") {

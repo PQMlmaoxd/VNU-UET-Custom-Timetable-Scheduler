@@ -87,14 +87,14 @@ versions. It then:
 
 1. Verifies the source snapshot and builds the native worker.
 2. Runs the complete locked CI/release gate with the same version.
-3. Publishes and smoke-tests the standalone diagnostics CLI after the release gate.
+3. Publishes and smoke-tests the standalone diagnostics CLI, then bundles the exact binary in the finalized portable package.
 4. Downloads and verifies the configured WebView2 runtime.
 5. Installs and version-checks Inno Setup 6.7.1.
-6. Builds the installer and runs silent install, worker and uninstall smoke tests.
-7. Creates the self-contained ZIP, installer, diagnostics executable, recursive CakeML/HOL4 source
-     bundle, and checksum files. The release manifest, SBOM and third-party notices remain inside the
+6. Builds the installer from a separate WebView2-aware staging tree and runs silent install, diagnostics, worker and uninstall smoke tests.
+7. Creates the self-contained ZIP, installer, diagnostics executable, and recursive CakeML/HOL4 source
+     bundle. The release manifest, SBOM and third-party notices remain inside the
      published tree and ZIP.
-8. Creates a draft GitHub Release, uploads and verifies all six product assets, then publishes the draft
+8. Creates a draft GitHub Release, uploads and verifies all four product assets, then publishes the draft
      using `GITHUB_TOKEN`; GitHub also provides source-code ZIP and tar archives, but those automatic
      archives contain submodule gitlinks rather than submodule working-tree contents.
 
@@ -119,14 +119,13 @@ The GitHub Release contains these uploaded assets:
 - `VNU-UET-Custom-Timetable-Scheduler-<version>-Setup.exe`: per-user Inno Setup installer.
 - `VNU-UET-Custom-Timetable-Scheduler-<version>-win-x64.zip`: self-contained publish directory.
 - `VNU-UET-Custom-Timetable-Scheduler-<version>-Diagnostics-win-x64.exe`: self-contained, single-file diagnostics CLI.
-- `VNU-UET-Custom-Timetable-Scheduler-<version>-SHA256SUMS.txt`: SHA-256 values for the installer, ZIP, and diagnostics binary.
 - `VNU-UET-Custom-Timetable-Scheduler-<version>-Source-with-submodules.tar.gz`: recursive source bundle containing the pinned CakeML and HOL4 working trees.
-- `VNU-UET-Custom-Timetable-Scheduler-<version>-Source-with-submodules.tar.gz.sha256`: SHA-256 value for the recursive source bundle.
 
-The diagnostics asset is built from `Scheduler.Diagnostics`, smoke-tested with
-`help`, `version`, `self-test`, and JSON `doctor`, and is copied only when the
-input file is named exactly `Scheduler.Diagnostics.exe`. Its CLI commands and
-privacy defaults are documented in
+GitHub provides a server-computed SHA-256 digest for each uploaded asset; no checksum
+text sidecar is uploaded. The diagnostics asset is built from `Scheduler.Diagnostics`,
+smoke-tested with automatic mode, `help`, `version`, `self-test`, and JSON `doctor`,
+and is copied only when the input file is named exactly `Scheduler.Diagnostics.exe`.
+The same binary is bundled in the installer and portable ZIP. Its CLI commands and privacy defaults are documented in
 `scheduler/desktop/src/Scheduler.Diagnostics/README.md`.
 
 GitHub additionally provides `Source code (zip)` and `Source code (tar.gz)` for

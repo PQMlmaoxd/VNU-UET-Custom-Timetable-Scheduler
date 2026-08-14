@@ -7,6 +7,7 @@ param(
     [string]$Version,
     [string]$WebRoot,
     [string]$PublishPath,
+    [string]$DiagnosticsPath,
     [string]$OutputPath,
     [string]$WebView2InstallerPath,
     [string]$WebView2Sha256,
@@ -102,6 +103,7 @@ function Test-WebView2Input {
 
 $desktopRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $publishScript = Join-Path $PSScriptRoot "publish-windows.ps1"
+$diagnosticsPublishScript = Join-Path $PSScriptRoot "publish-windows-diagnostics.ps1"
 $sbomScript = Join-Path $PSScriptRoot "generate-sbom.ps1"
 $metadataScript = Join-Path $PSScriptRoot "write-release-metadata.ps1"
 $installerScript = Join-Path $desktopRoot "installer\SchedulerDesktop.iss"
@@ -135,15 +137,41 @@ if (-not $SkipPublish) {
 }
 
 $publishDirectory = (Resolve-Path $PublishPath).Path
+if ([string]::IsNullOrWhiteSpace($DiagnosticsPath)) {
+    $DiagnosticsPath = Join-Path $desktopRoot "artifacts\diagnostics-windows-x64\Scheduler.Diagnostics.exe"
+    & $diagnosticsPublishScript -Version $Version -WorkerPath $worker -OutputPath (Split-Path $DiagnosticsPath -Parent)
+    if (-not $?) {
+        throw "Diagnostics publication failed."
+    }
+}
+
+$diagnostics = Get-RequiredPath $DiagnosticsPath "Scheduler.Diagnostics.exe"
+if ([System.IO.Path]::GetFileName($diagnostics) -ne "Scheduler.Diagnostics.exe") {
+    throw "DiagnosticsPath must identify Scheduler.Diagnostics.exe."
+}
+
 $requiredPublishFiles = @(
     "Scheduler.Desktop.exe",
     "Scheduler.Desktop.dll",
+    "Scheduler.Diagnostics.exe",
     "hostfxr.dll",
     "hostpolicy.dll",
     "SolverWorker.exe",
     "app.ico",
     "web\index.html"
 )
+
+$bundledDiagnostics = Join-Path $publishDirectory "Scheduler.Diagnostics.exe"
+$diagnosticsHash = (Get-FileHash -Algorithm SHA256 -Path $diagnostics).Hash.ToLowerInvariant()
+if (-not (Test-Path $bundledDiagnostics -PathType Leaf) -or
+    (Get-FileHash -Algorithm SHA256 -Path $bundledDiagnostics).Hash.ToLowerInvariant() -ne $diagnosticsHash) {
+    if ($SkipSbom) {
+        throw "Publish directory diagnostics does not match DiagnosticsPath; regenerate portable SBOM and metadata before using SkipSbom."
+    }
+
+    Copy-Item -Force $diagnostics $bundledDiagnostics
+}
+
 foreach ($relativePath in $requiredPublishFiles) {
     if (-not (Test-Path (Join-Path $publishDirectory $relativePath) -PathType Leaf)) {
         throw "Publish directory is missing required release input: $relativePath"
@@ -163,13 +191,10 @@ if ($assemblyVersion -ne $expectedAssemblyVersion) {
     throw "Published application version $assemblyVersion does not match requested version $expectedAssemblyVersion."
 }
 
-if (-not $SkipSbom -or $null -ne $runtime) {
+if (-not $SkipSbom) {
     & $sbomScript `
         -Version $Version `
-        -PublishPath $publishDirectory `
-        -WebView2InstallerPath $(if ($null -eq $runtime) { $null } else { $runtime.Path }) `
-        -WebView2Sha256 $(if ($null -eq $runtime) { $null } else { $runtime.Sha256 }) `
-        -WebView2SourceUrl $(if ($null -eq $runtime) { $null } else { $runtime.SourceUrl })
+        -PublishPath $publishDirectory
     if (-not $?) {
         throw "SBOM generation failed."
     }
@@ -182,37 +207,63 @@ if (-not (Test-Path (Join-Path $publishDirectory "sbom.cdx.json") -PathType Leaf
 $outputDirectory = [System.IO.Path]::GetFullPath($OutputPath)
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 
-& $metadataScript `
-    -Version $Version `
-    -PublishPath $publishDirectory `
-    -WebView2Sha256 $(if ($null -eq $runtime) { $null } else { $runtime.Sha256 }) `
-    -WebView2SourceUrl $(if ($null -eq $runtime) { $null } else { $runtime.SourceUrl })
-if (-not $?) {
-    throw "Release metadata generation failed."
+if (-not $SkipSbom) {
+    & $metadataScript -Version $Version -PublishPath $publishDirectory
+    if (-not $?) {
+        throw "Release metadata generation failed."
+    }
 }
 
-$compilerArguments = @(
-    "/Qp"
-    "/DAppVersion=$Version"
-    "/DSourceDir=$publishDirectory"
-    "/DOutputDir=$outputDirectory"
-    "/DAppIconFile=$(Join-Path $publishDirectory 'app.ico')"
-    "/DIncludeWebView2=$([int]($null -ne $runtime))"
-)
-
-if ($null -ne $runtime) {
-    $compilerArguments += "/DWebView2Installer=$($runtime.Path)"
+if (-not (Test-Path (Join-Path $publishDirectory "release-manifest.json") -PathType Leaf)) {
+    throw "Publish directory is missing release-manifest.json."
 }
 
-$compilerArguments += $installerScript
-Invoke-RequiredCommand { & $iscc @compilerArguments } "Inno Setup compilation failed."
+$stagingDirectory = Join-Path $desktopRoot ("artifacts\installer-staging-" + [Guid]::NewGuid().ToString("N"))
+try {
+    New-Item -ItemType Directory -Force -Path $stagingDirectory | Out-Null
+    Copy-Item -Recurse -Force (Join-Path $publishDirectory "*") $stagingDirectory
 
-$installerPath = Join-Path $outputDirectory "VNU-UET-Custom-Timetable-Scheduler-$Version-Setup.exe"
-if (-not (Test-Path $installerPath -PathType Leaf)) {
-    throw "Inno Setup did not produce the expected installer: $installerPath"
-}
+    & $sbomScript `
+        -Version $Version `
+        -PublishPath $stagingDirectory `
+        -WebView2InstallerPath $(if ($null -eq $runtime) { $null } else { $runtime.Path }) `
+        -WebView2Sha256 $(if ($null -eq $runtime) { $null } else { $runtime.Sha256 }) `
+        -WebView2SourceUrl $(if ($null -eq $runtime) { $null } else { $runtime.SourceUrl })
+    if (-not $?) {
+        throw "Installer staging SBOM generation failed."
+    }
 
-if ($SmokeTest) {
+    & $metadataScript `
+        -Version $Version `
+        -PublishPath $stagingDirectory `
+        -WebView2Sha256 $(if ($null -eq $runtime) { $null } else { $runtime.Sha256 }) `
+        -WebView2SourceUrl $(if ($null -eq $runtime) { $null } else { $runtime.SourceUrl })
+    if (-not $?) {
+        throw "Installer staging metadata generation failed."
+    }
+
+    $compilerArguments = @(
+        "/Qp"
+        "/DAppVersion=$Version"
+        "/DSourceDir=$stagingDirectory"
+        "/DOutputDir=$outputDirectory"
+        "/DAppIconFile=$(Join-Path $stagingDirectory 'app.ico')"
+        "/DIncludeWebView2=$([int]($null -ne $runtime))"
+    )
+
+    if ($null -ne $runtime) {
+        $compilerArguments += "/DWebView2Installer=$($runtime.Path)"
+    }
+
+    $compilerArguments += $installerScript
+    Invoke-RequiredCommand { & $iscc @compilerArguments } "Inno Setup compilation failed."
+
+    $installerPath = Join-Path $outputDirectory "VNU-UET-Custom-Timetable-Scheduler-$Version-Setup.exe"
+    if (-not (Test-Path $installerPath -PathType Leaf)) {
+        throw "Inno Setup did not produce the expected installer: $installerPath"
+    }
+
+    if ($SmokeTest) {
     $smokeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("VNU-UET-Custom-Timetable-Scheduler-smoke-" + [Guid]::NewGuid().ToString("N"))
     try {
         $installProcess = Start-Process `
@@ -224,7 +275,7 @@ if ($SmokeTest) {
             throw "Installer smoke installation failed with exit code $($installProcess.ExitCode)."
         }
 
-        foreach ($relativePath in @("Scheduler.Desktop.exe", "SolverWorker.exe", "app.ico", "web\index.html", "THIRD_PARTY_NOTICES.md", "release-manifest.json", "sbom.cdx.json")) {
+        foreach ($relativePath in @("Scheduler.Desktop.exe", "Scheduler.Diagnostics.exe", "SolverWorker.exe", "app.ico", "web\index.html", "THIRD_PARTY_NOTICES.md", "release-manifest.json", "sbom.cdx.json")) {
             if (-not (Test-Path (Join-Path $smokeRoot $relativePath) -PathType Leaf)) {
                 throw "Installer smoke check is missing: $relativePath"
             }
@@ -234,6 +285,19 @@ if ($SmokeTest) {
         & $installedWorker --self-test
         if ($LASTEXITCODE -ne 0) {
             throw "Installed SolverWorker self-test failed."
+        }
+
+        $installedDiagnostics = Join-Path $smokeRoot "Scheduler.Diagnostics.exe"
+        $installedDiagnosticsOutput = & $installedDiagnostics doctor --app $smokeRoot --worker $installedWorker --format json | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            throw "Installed diagnostics doctor smoke test failed."
+        }
+        $installedDiagnosticsReport = $installedDiagnosticsOutput | ConvertFrom-Json
+        if ($installedDiagnosticsReport.status -ne "passed" -or $installedDiagnosticsReport.exit_code -ne 0) {
+            throw "Installed diagnostics doctor report did not pass."
+        }
+        if ((Get-FileHash -Algorithm SHA256 -Path $installedDiagnostics).Hash.ToLowerInvariant() -ne $diagnosticsHash) {
+            throw "Installed Scheduler.Diagnostics.exe does not match the standalone diagnostics executable."
         }
 
         $uninstaller = Join-Path $smokeRoot "unins000.exe"
@@ -252,9 +316,13 @@ if ($SmokeTest) {
     finally {
         Remove-Item -Recurse -Force $smokeRoot -ErrorAction SilentlyContinue
     }
-}
+    }
 
-Write-Host "Installer created: $installerPath"
-if ($null -eq $runtime) {
-    Write-Warning "This installer requires an existing WebView2 Runtime. Supply pinned WebView2 inputs for a self-contained runtime installation path."
+    Write-Host "Installer created: $installerPath"
+    if ($null -eq $runtime) {
+        Write-Warning "This installer requires an existing WebView2 Runtime. Supply pinned WebView2 inputs for a self-contained runtime installation path."
+    }
+}
+finally {
+    Remove-Item -Recurse -Force $stagingDirectory -ErrorAction SilentlyContinue
 }

@@ -55,6 +55,5 @@ SOURCE_DATE_EPOCH=0 tar -cf "$temporary_tar" \
 gzip -n -9 "$temporary_tar"
 mv "$temporary_tar.gz" "$output_path"
 
-sha256sum "$output_path" > "${output_path}.sha256"
 printf 'Recursive CakeML/HOL4 source bundle created: %s\n' "$output_path"
-cat "${output_path}.sha256"
+sha256sum "$output_path"

@@ -4,6 +4,7 @@ param(
     [string]$SolverWorkerPath,
     [string]$WebRoot,
     [string]$OutputPath,
+    [string]$DiagnosticsOutputPath,
     [switch]$SkipFrontendInstall,
     [string]$ReleaseVersion,
     [switch]$BuildInstaller,
@@ -38,6 +39,7 @@ $solutionPath = Join-Path $desktopRoot "Scheduler.sln"
 $frontendRoot = (Resolve-Path (Join-Path $desktopRoot "..\frontend")).Path
 $worker = (Resolve-Path $SolverWorkerPath).Path
 $publishScript = Join-Path $PSScriptRoot "publish-windows.ps1"
+$diagnosticsPublishScript = Join-Path $PSScriptRoot "publish-windows-diagnostics.ps1"
 $sbomScript = Join-Path $PSScriptRoot "generate-sbom.ps1"
 $metadataScript = Join-Path $PSScriptRoot "write-release-metadata.ps1"
 $installerScript = Join-Path $PSScriptRoot "build-installer.ps1"
@@ -63,6 +65,10 @@ if ([string]::IsNullOrWhiteSpace($WebRoot)) {
 
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
     $OutputPath = Join-Path $desktopRoot "artifacts\windows-x64"
+}
+
+if ([string]::IsNullOrWhiteSpace($DiagnosticsOutputPath)) {
+    $DiagnosticsOutputPath = Join-Path $desktopRoot "artifacts\diagnostics-windows-x64"
 }
 
 if (-not (Test-Path $worker -PathType Leaf)) {
@@ -132,6 +138,18 @@ try {
         throw "Windows publish-directory verification failed."
     }
 
+    & $diagnosticsPublishScript `
+        -Version $effectiveReleaseVersion `
+        -OutputPath $DiagnosticsOutputPath `
+        -WorkerPath $worker
+    if (-not $?) {
+        throw "Windows diagnostics publication failed."
+    }
+
+    $standaloneDiagnostics = Join-Path ([System.IO.Path]::GetFullPath($DiagnosticsOutputPath)) "Scheduler.Diagnostics.exe"
+    $bundledDiagnostics = Join-Path ([System.IO.Path]::GetFullPath($OutputPath)) "Scheduler.Diagnostics.exe"
+    Copy-Item -Force $standaloneDiagnostics $bundledDiagnostics
+
     & $sbomScript -Version $effectiveReleaseVersion -PublishPath $OutputPath
     if (-not $?) {
         throw "SBOM generation failed."
@@ -142,12 +160,24 @@ try {
         throw "Release metadata generation failed."
     }
 
+    & $bundledDiagnostics app --app $OutputPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Final application diagnostics smoke test failed."
+    }
+
+    $standaloneDiagnosticsHash = (Get-FileHash -Algorithm SHA256 -Path $standaloneDiagnostics).Hash.ToLowerInvariant()
+    $bundledDiagnosticsHash = (Get-FileHash -Algorithm SHA256 -Path $bundledDiagnostics).Hash.ToLowerInvariant()
+    if ($standaloneDiagnosticsHash -ne $bundledDiagnosticsHash) {
+        throw "Bundled Scheduler.Diagnostics.exe does not match the standalone release executable."
+    }
+
     if ($BuildInstaller) {
         & $installerScript `
             -SolverWorkerPath $worker `
             -Version $InstallerVersion `
             -WebRoot $WebRoot `
             -PublishPath $OutputPath `
+            -DiagnosticsPath $standaloneDiagnostics `
             -WebView2InstallerPath $WebView2InstallerPath `
             -WebView2Sha256 $WebView2Sha256 `
             -WebView2SourceUrl $WebView2SourceUrl `

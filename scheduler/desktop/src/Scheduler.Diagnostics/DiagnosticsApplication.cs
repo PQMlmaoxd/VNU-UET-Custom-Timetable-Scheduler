@@ -8,12 +8,15 @@ internal static class DiagnosticsApplication
         IReadOnlyList<string> arguments,
         TextWriter standardOutput,
         TextWriter standardError,
+        string? executableDirectory = null,
         CancellationToken cancellationToken = default)
     {
         DiagnosticsOptions options;
         try
         {
-            options = ArgumentParser.Parse(arguments);
+            options = arguments.Count == 0
+                ? AutomaticDiagnostics.CreateOptions(executableDirectory ?? AppContext.BaseDirectory)
+                : ArgumentParser.Parse(arguments);
         }
         catch (DiagnosticsUsageException)
         {
@@ -170,5 +173,7 @@ Options:
 
 Exit codes: 0 pass, 1 failed checks, 2 usage, 4 missing target, 5 internal error.
 The default report omits machine, user, environment, absolute path, and input-content details.
+With no arguments, the CLI checks sibling Scheduler.Desktop.exe and SolverWorker.exe.
+It does not discover workbooks. An Explorer-owned console waits for a key after the report.
 """;
 }

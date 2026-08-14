@@ -111,6 +111,12 @@ Those items are additional release hardening for an official Windows installer
 and for claiming a formally verified UNSAT result. The acceptance evidence is
 tracked in [`scheduler/desktop/RELEASE_ACCEPTANCE_CHECKLIST.md`](scheduler/desktop/RELEASE_ACCEPTANCE_CHECKLIST.md).
 
+Each Windows release explicitly uploads four assets: the installer, portable ZIP,
+standalone tester Diagnostics CLI, and recursive CakeML/HOL4 source bundle. The
+installer and ZIP both include `Scheduler.Diagnostics.exe`; opening it with no
+arguments performs privacy-safe checks of sibling application files. GitHub exposes
+the SHA-256 digest of each asset, so release checksum text files are not uploaded.
+
 ## Documentation
 
 The documentation index is [`docs/README.md`](docs/README.md). It links the

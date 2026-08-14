@@ -11,6 +11,7 @@ internal static class AppDiagnostics
     private static readonly string[] RequiredPackageFiles =
     [
         "Scheduler.Desktop.dll",
+        "Scheduler.Diagnostics.exe",
         "SolverWorker.exe",
         "app.ico",
         "web/index.html",
@@ -197,9 +198,17 @@ internal static class AppDiagnostics
                 !solverWorker.TryGetProperty("sha256", out var workerHash) ||
                 !TryGetSafeString(workerHash, out var workerHashValue) ||
                 !IsSha256(workerHashValue) ||
+                !root.TryGetProperty("diagnostics", out var diagnostics) ||
+                !diagnostics.TryGetProperty("file", out var diagnosticsFile) ||
+                !TryGetSafeString(diagnosticsFile, out var diagnosticsFileName) ||
+                !TryResolvePackageFile(rootPath, diagnosticsFileName, out _) ||
+                !diagnostics.TryGetProperty("sha256", out var diagnosticsHash) ||
+                !TryGetSafeString(diagnosticsHash, out var diagnosticsHashValue) ||
+                !IsSha256(diagnosticsHashValue) ||
                 !root.TryGetProperty("publish_files", out var publishFiles) ||
                 publishFiles.ValueKind != JsonValueKind.Object ||
-                !string.Equals(workerFileName, "SolverWorker.exe", StringComparison.OrdinalIgnoreCase))
+                !string.Equals(workerFileName, "SolverWorker.exe", StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(diagnosticsFileName, "Scheduler.Diagnostics.exe", StringComparison.OrdinalIgnoreCase))
             {
                 return ManifestData.Failed("Manifest does not contain the supported release fields.", schemaVersion);
             }
@@ -222,8 +231,12 @@ internal static class AppDiagnostics
 
             var workerEntry = files.FirstOrDefault(file =>
                 string.Equals(file.RelativePath, workerFileName, StringComparison.OrdinalIgnoreCase));
+            var diagnosticsEntry = files.FirstOrDefault(file =>
+                string.Equals(file.RelativePath, diagnosticsFileName, StringComparison.OrdinalIgnoreCase));
             if (workerEntry is null ||
                 !string.Equals(workerEntry.ExpectedSha256, workerHashValue, StringComparison.OrdinalIgnoreCase) ||
+                diagnosticsEntry is null ||
+                !string.Equals(diagnosticsEntry.ExpectedSha256, diagnosticsHashValue, StringComparison.OrdinalIgnoreCase) ||
                 !files.Any(file => string.Equals(
                     file.RelativePath,
                     applicationFileName,
@@ -232,7 +245,7 @@ internal static class AppDiagnostics
                     string.Equals(file.RelativePath, required, StringComparison.OrdinalIgnoreCase))))
             {
                 return ManifestData.Failed(
-                    "Manifest solver worker metadata does not match publish_files.",
+                    "Manifest package metadata does not match publish_files.",
                     schemaVersion);
             }
 

@@ -121,15 +121,17 @@ function Get-PackageNameFromLockPath {
 $desktopRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $workspaceRoot = (Resolve-Path (Join-Path $desktopRoot "..\..")).Path
 $desktopProject = Join-Path $desktopRoot "src\Scheduler.Desktop\Scheduler.Desktop.csproj"
+$diagnosticsProject = Join-Path $desktopRoot "src\Scheduler.Diagnostics\Scheduler.Diagnostics.csproj"
 $frontendLock = Join-Path $workspaceRoot "scheduler\frontend\package-lock.json"
 $cadicalProvenance = Join-Path $desktopRoot "native\SolverWorker\third_party\cadical-provenance.json"
 $cakeLprProvenance = Join-Path $desktopRoot "native\FormalVerification\cake-lpr-provenance.json"
 
 $publishDirectory = (Resolve-Path $PublishPath).Path
-if (-not (Test-Path (Join-Path $publishDirectory "Scheduler.Desktop.exe") -PathType Leaf)) {
-    throw "PublishPath is not a VNU-UET-Custom-Timetable-Scheduler release directory: $publishDirectory"
+foreach ($requiredFile in @("Scheduler.Desktop.exe", "Scheduler.Diagnostics.exe")) {
+    if (-not (Test-Path (Join-Path $publishDirectory $requiredFile) -PathType Leaf)) {
+        throw "PublishPath is missing required release file: $requiredFile"
+    }
 }
-
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
     $OutputPath = Join-Path $publishDirectory "sbom.cdx.json"
 }
@@ -137,50 +139,54 @@ if ([string]::IsNullOrWhiteSpace($OutputPath)) {
 $frontendLock = Get-RequiredPath $frontendLock "Frontend package lock"
 $cadicalProvenance = Get-RequiredPath $cadicalProvenance "CaDiCaL provenance"
 $cakeLprProvenance = Get-RequiredPath $cakeLprProvenance "CakeLPR provenance"
+$diagnosticsProject = Get-RequiredPath $diagnosticsProject "Diagnostics project"
 $componentsByReference = @{}
 
-$packageReportPath = [System.IO.Path]::GetTempFileName()
-try {
-    & dotnet list $desktopProject package --include-transitive --format json *> $packageReportPath
-    if ($LASTEXITCODE -ne 0) {
-        throw "Unable to inspect resolved .NET packages. Run dotnet restore before generating the SBOM."
-    }
+$packageProjects = @($desktopProject, $diagnosticsProject)
+foreach ($packageProject in $packageProjects) {
+    $packageReportPath = [System.IO.Path]::GetTempFileName()
+    try {
+        & dotnet list $packageProject package --include-transitive --format json *> $packageReportPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "Unable to inspect resolved .NET packages. Run dotnet restore before generating the SBOM."
+        }
 
-    $packageReport = Get-Content -Raw $packageReportPath | ConvertFrom-Json
-    foreach ($project in $packageReport.projects) {
-        foreach ($framework in $project.frameworks) {
-            foreach ($package in @($framework.topLevelPackages) + @($framework.transitivePackages)) {
-                if ($null -eq $package) {
-                    continue
+        $packageReport = Get-Content -Raw $packageReportPath | ConvertFrom-Json
+        foreach ($project in $packageReport.projects) {
+            foreach ($framework in $project.frameworks) {
+                foreach ($package in @($framework.topLevelPackages) + @($framework.transitivePackages)) {
+                    if ($null -eq $package) {
+                        continue
+                    }
+
+                    $name = [string]$package.id
+                    $resolvedVersion = [string]$package.resolvedVersion
+                    if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($resolvedVersion)) {
+                        throw "Resolved .NET package report contains an incomplete package entry."
+                    }
+
+                    if (-not $nugetLicenses.ContainsKey($name)) {
+                        throw "No license metadata is defined for resolved NuGet package '$name'."
+                    }
+
+                    $license = $nugetLicenses[$name]
+
+                    $purl = "pkg:nuget/$([Uri]::EscapeDataString($name).ToLowerInvariant())@$resolvedVersion"
+                    $componentsByReference[$purl] = New-Component `
+                        -Type "library" `
+                        -Name $name `
+                        -Version $resolvedVersion `
+                        -Purl $purl `
+                        -Properties @{ "scheduler:source" = "nuget"; "scheduler:license-url" = $license.Url } `
+                        -LicenseName $license.Name `
+                        -LicenseUrl $license.Url
                 }
-
-                $name = [string]$package.id
-                $resolvedVersion = [string]$package.resolvedVersion
-                if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($resolvedVersion)) {
-                    throw "Resolved .NET package report contains an incomplete package entry."
-                }
-
-                if (-not $nugetLicenses.ContainsKey($name)) {
-                    throw "No license metadata is defined for resolved NuGet package '$name'."
-                }
-
-                $license = $nugetLicenses[$name]
-
-                $purl = "pkg:nuget/$([Uri]::EscapeDataString($name).ToLowerInvariant())@$resolvedVersion"
-                $componentsByReference[$purl] = New-Component `
-                    -Type "library" `
-                    -Name $name `
-                    -Version $resolvedVersion `
-                    -Purl $purl `
-                    -Properties @{ "scheduler:source" = "nuget"; "scheduler:license-url" = $license.Url } `
-                    -LicenseName $license.Name `
-                    -LicenseUrl $license.Url
             }
         }
     }
-}
-finally {
-    Remove-Item -Force $packageReportPath -ErrorAction SilentlyContinue
+    finally {
+        Remove-Item -Force $packageReportPath -ErrorAction SilentlyContinue
+    }
 }
 
 # Windows PowerShell cannot deserialize the npm root package because its key is
@@ -327,6 +333,18 @@ $componentsByReference[$runtimePurl] = New-Component `
     -LicenseName "MIT" `
     -LicenseUrl "https://github.com/dotnet/runtime/blob/main/LICENSE.TXT"
 $applicationPurl = "pkg:generic/vnu-uet-custom-timetable-scheduler@$Version"
+$diagnosticsPath = Join-Path $publishDirectory "Scheduler.Diagnostics.exe"
+$diagnosticsPurl = "pkg:generic/vnu-uet-custom-timetable-scheduler-diagnostics@$Version"
+$componentsByReference[$diagnosticsPurl] = New-Component `
+    -Type "application" `
+    -Name "VNU-UET Custom Timetable Scheduler Diagnostics" `
+    -Version $Version `
+    -Purl $diagnosticsPurl `
+    -Properties @{
+        "scheduler:file" = "Scheduler.Diagnostics.exe"
+        "scheduler:role" = "bundled-tester-cli"
+        "scheduler:sha256" = (Get-FileHash -Algorithm SHA256 -Path $diagnosticsPath).Hash.ToLowerInvariant()
+    }
 $applicationProperties = [ordered]@{
     "scheduler:source" = "desktop-publish"
     "scheduler:publish-file-count" = [string]$publishRecords.Count

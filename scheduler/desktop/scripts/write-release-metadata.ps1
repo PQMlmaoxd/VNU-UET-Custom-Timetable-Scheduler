@@ -39,7 +39,7 @@ function Get-PortableRelativePath {
 
 $desktopRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $publishDirectory = (Resolve-Path $PublishPath).Path
-foreach ($relativePath in @("Scheduler.Desktop.exe", "Scheduler.Desktop.dll", "SolverWorker.exe", "app.ico", "web\index.html", "sbom.cdx.json")) {
+foreach ($relativePath in @("Scheduler.Desktop.exe", "Scheduler.Desktop.dll", "Scheduler.Diagnostics.exe", "SolverWorker.exe", "app.ico", "web\index.html", "sbom.cdx.json")) {
     if (-not (Test-Path (Join-Path $publishDirectory $relativePath) -PathType Leaf)) {
         throw "Publish directory is missing required release metadata input: $relativePath"
     }
@@ -105,6 +105,10 @@ $manifest = [ordered]@{
         file = "SolverWorker.exe"
         sha256 = (Get-FileHash -Algorithm SHA256 -Path (Join-Path $publishDirectory "SolverWorker.exe")).Hash.ToLowerInvariant()
         cadical_version = "3.0.1"
+    }
+    diagnostics = [ordered]@{
+        file = "Scheduler.Diagnostics.exe"
+        sha256 = (Get-FileHash -Algorithm SHA256 -Path (Join-Path $publishDirectory "Scheduler.Diagnostics.exe")).Hash.ToLowerInvariant()
     }
     webview2 = if ([string]::IsNullOrWhiteSpace($WebView2Sha256)) {
         [ordered]@{ bundled = $false }

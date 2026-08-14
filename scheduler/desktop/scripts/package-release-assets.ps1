@@ -50,6 +50,7 @@ $diagnostics = Get-RequiredFile $DiagnosticsPath "Standalone diagnostics executa
 foreach ($relativePath in @("release-manifest.json", "sbom.cdx.json", "THIRD_PARTY_NOTICES.md", "app.ico", "web\index.html")) {
     Get-RequiredFile (Join-Path $publishDirectory $relativePath) "Published release file $relativePath" | Out-Null
 }
+$bundledDiagnostics = Get-RequiredFile (Join-Path $publishDirectory "Scheduler.Diagnostics.exe") "Bundled diagnostics executable"
 
 $expectedInstallerName = "VNU-UET-Custom-Timetable-Scheduler-$Version-Setup.exe"
 if ([System.IO.Path]::GetFileName($installer) -ne $expectedInstallerName) {
@@ -64,30 +65,34 @@ if (-not [string]::Equals(
     throw "Diagnostics path must identify the exact $expectedDiagnosticsExecutableName file: $diagnostics"
 }
 
+$standaloneDiagnosticsHash = (Get-FileHash -Algorithm SHA256 -Path $diagnostics).Hash.ToLowerInvariant()
+$bundledDiagnosticsHash = (Get-FileHash -Algorithm SHA256 -Path $bundledDiagnostics).Hash.ToLowerInvariant()
+if ($standaloneDiagnosticsHash -ne $bundledDiagnosticsHash) {
+    throw "Bundled Scheduler.Diagnostics.exe does not match the standalone diagnostics executable."
+}
+
+$manifest = Get-Content -Raw (Join-Path $publishDirectory "release-manifest.json") | ConvertFrom-Json
+if ($null -eq $manifest.diagnostics -or
+    $manifest.diagnostics.file -ne "Scheduler.Diagnostics.exe" -or
+    $manifest.diagnostics.sha256 -ne $bundledDiagnosticsHash -or
+    $manifest.publish_files.'Scheduler.Diagnostics.exe' -ne $bundledDiagnosticsHash) {
+    throw "Release manifest diagnostics metadata does not match the bundled executable."
+}
+if ($null -eq $manifest.webview2 -or $manifest.webview2.bundled -ne $false) {
+    throw "Portable release manifest must not claim an installer-only WebView2 runtime."
+}
+
 Remove-Item -Recurse -Force $outputFullPath -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $outputFullPath | Out-Null
 
 $publishZip = Join-Path $outputFullPath "VNU-UET-Custom-Timetable-Scheduler-$Version-win-x64.zip"
 $diagnosticsAssetName = "VNU-UET-Custom-Timetable-Scheduler-$Version-Diagnostics-win-x64.exe"
 $diagnosticsAsset = Join-Path $outputFullPath $diagnosticsAssetName
-$checksumsPath = Join-Path $outputFullPath "VNU-UET-Custom-Timetable-Scheduler-$Version-SHA256SUMS.txt"
 Compress-Archive -Path (Join-Path $publishDirectory "*") -DestinationPath $publishZip -CompressionLevel Optimal
 Copy-Item -Force $installer (Join-Path $outputFullPath $expectedInstallerName)
 Copy-Item -Force $diagnostics $diagnosticsAsset
 
-$releaseFiles = @(
-    (Get-Item (Join-Path $outputFullPath $expectedInstallerName)),
-    (Get-Item $publishZip),
-    (Get-Item $diagnosticsAsset)
-)
-$checksumLines = $releaseFiles |
-    Sort-Object Name |
-    ForEach-Object {
-        "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant(), $_.Name
-    }
-[System.IO.File]::WriteAllLines($checksumsPath, $checksumLines, [System.Text.UTF8Encoding]::new($false))
-
-# Release metadata remains inside the self-contained publish ZIP. GitHub only
-# publishes the installer, ZIP, standalone diagnostics executable, and checksum file.
+# Release metadata remains inside the self-contained publish ZIP. GitHub exposes
+# server-computed SHA-256 digests for each uploaded asset.
 
 Write-Host "Release assets created: $outputFullPath"

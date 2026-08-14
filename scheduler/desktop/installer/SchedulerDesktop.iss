@@ -29,6 +29,7 @@
 #define AppName "VNU-UET Custom Timetable Scheduler"
 #define AppPublisher "VNU-UET"
 #define AppExeName "Scheduler.Desktop.exe"
+#define DiagnosticsExeName "Scheduler.Diagnostics.exe"
 #define AppId "{{E0DFD8A4-3C3E-4DC7-BB99-7EA58D8E2A5F}"
 #define WebView2ClientId "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 #define WebView2InstallerName "MicrosoftEdgeWebView2Setup.exe"
@@ -62,6 +63,7 @@ Source: "{#WebView2Installer}"; DestDir: "{tmp}"; DestName: "{#WebView2Installer
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"
+Name: "{group}\{#AppName} Diagnostics"; Filename: "{app}\{#DiagnosticsExeName}"; WorkingDir: "{app}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
 [Tasks]
