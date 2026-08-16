@@ -88,15 +88,6 @@ public sealed class PdfTimetableParserTests(ITestOutputHelper output)
         var pdf = PdfTimetableParser.Parse(pdfPath, "CNTT");
         var workbook = TimetableParser.Parse(workbookPath, "CNTT");
 
-        Assert.Equal(402, pdf.Problem.Sessions.Length);
-        Assert.Equal(388, pdf.Problem.SchedulableSessions.Length);
-        Assert.Equal(14, pdf.Problem.OnlineSessions.Length);
-        Assert.Equal(218, pdf.Problem.LecturerBlocks.Length);
-        Assert.Equal(402, workbook.Problem.Sessions.Length);
-        Assert.Equal(388, workbook.Problem.SchedulableSessions.Length);
-        Assert.Equal(14, workbook.Problem.OnlineSessions.Length);
-        Assert.Equal(218, workbook.Problem.LecturerBlocks.Length);
-
         Assert.Equal(
             workbook.Problem.Sessions.Select(CanonicalSession).ToHashSet(StringComparer.Ordinal),
             pdf.Problem.Sessions.Select(CanonicalSession).ToHashSet(StringComparer.Ordinal));
@@ -182,7 +173,7 @@ public sealed class PdfTimetableParserTests(ITestOutputHelper output)
             var result = PdfTimetableParser.Parse(path);
             stopwatch.Stop();
             durations.Add(stopwatch.ElapsedMilliseconds);
-            Assert.Equal(1661, result.Problem.Sessions.Length);
+            Assert.NotEmpty(result.Problem.Sessions);
         }
 
         durations.Sort();

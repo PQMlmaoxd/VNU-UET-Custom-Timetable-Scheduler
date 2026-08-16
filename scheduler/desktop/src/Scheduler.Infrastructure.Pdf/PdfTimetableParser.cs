@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using Scheduler.Domain;
 using Scheduler.Infrastructure.Timetable;
 using UglyToad.PdfPig;
@@ -11,15 +12,23 @@ namespace Scheduler.Infrastructure.Pdf;
 public static class PdfTimetableParser
 {
     public const string TemplateId = "uet-timetable-landscape-v1";
+    public const string Template2026Id = "uet-timetable-landscape-2026-v1";
 
     private const double ExpectedPageWidth = 792;
     private const double ExpectedPageHeight = 612;
     private const double DataStartTolerance = 0.5;
+    private const int MaximumTemplateDetectionPages = 3;
+    private static readonly Regex EmbeddedCourseCode = new(
+        @"(?:[A-Z]{2,5}\.)?[A-Z]{2,5}\d{4}[A-Z]*[#*]*",
+        RegexOptions.CultureInvariant);
+    private static readonly Regex OverflowedPeriodAndRoom = new(
+        @"^P(?<period>[1-4])(?<room>.+)$",
+        RegexOptions.CultureInvariant);
 
     // These bands are derived from the table header and are intentionally kept
     // in one place. The PDF is a printed table, so whitespace token positions
     // are not a stable parsing contract.
-    private static readonly PdfColumnBands Columns = new(
+    private static readonly PdfColumnBands LegacyColumns = new(
         Class: (0, 74),
         CourseCode: (74, 118),
         CourseName: (118, 210),
@@ -39,6 +48,35 @@ public static class PdfTimetableParser
         // lecturer band is important for rows with "Ca 1/Ca 2" annotations.
         Lecturer: (523, 623),
         Notes: (681, 792));
+
+    // The 2026 export adds PCGD and class-size columns before the LHP field.
+    // Its header remains text-native and landscape, but each data band shifts right.
+    private static readonly PdfColumnBands Columns2026 = new(
+        Class: (45, 95),
+        CourseCode: (95, 140),
+        CourseName: (140, 232),
+        Credits: (232, 251),
+        LtHours: (251, 270),
+        ThHours: (270, 296),
+        SelfStudy: (296, 314),
+        TeachingLoad: (314, 334),
+        ClassSize: (334, 355),
+        Lhp: (355, 405),
+        Group: (405, 432),
+        SessionType: (432, 468),
+        Day: (468, 490),
+        Period: (490, 510),
+        Room: (510, 545),
+        // Notes are left-aligned at x=645 even though the printed header is
+        // centered farther right in the cell.
+        Lecturer: (545, 645),
+        Notes: (645, 792));
+
+    private static readonly PdfTemplateProfile[] Templates =
+    [
+        new(Template2026Id, Columns2026, UsesPrefixLetters: true),
+        new(TemplateId, LegacyColumns),
+    ];
 
     public static TimetableParseResult Parse(
         string pdfPath,
@@ -73,13 +111,19 @@ public static class PdfTimetableParser
                 $"the limit is {parseOptions.MaxPages.ToString(CultureInfo.InvariantCulture)}.");
         }
 
+        var template = SelectTemplate(document, parseOptions, cancellationToken);
+        if (template is null)
+        {
+            throw new InvalidDataException("PDF does not match the supported timetable template.");
+        }
+
         var activeRows = new List<PdfLogicalRow>();
         for (var pageNumber = 1; pageNumber <= document.NumberOfPages; pageNumber++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var page = document.GetPage(pageNumber);
             ValidatePage(page, pageNumber, parseOptions);
-            var lines = ReadLines(page, pageNumber, parseOptions, cancellationToken);
+            var lines = ReadLines(page, pageNumber, template, parseOptions, cancellationToken);
 
             foreach (var line in lines)
             {
@@ -93,6 +137,28 @@ public static class PdfTimetableParser
 
                 if (IsSectionBoundary(line))
                 {
+                    FlushRows(
+                        activeRows,
+                        ref logicalRows,
+                        departmentFilter,
+                        courses,
+                        rooms,
+                        lecturers,
+                        inScope,
+                        otherDepartment,
+                        warnings,
+                        fatalWarnings,
+                        skippedRows,
+                        cancellationToken);
+                    activeRows.Clear();
+                    continue;
+                }
+
+                if (IsNextRowPrelude(line))
+                {
+                    // Some 2026 online rows print their course title and type on
+                    // a line before repeating the class with the course code.
+                    // It belongs to the next row, not the preceding timetable row.
                     FlushRows(
                         activeRows,
                         ref logicalRows,
@@ -196,6 +262,9 @@ public static class PdfTimetableParser
         ["Vũ Trọng"] = "Vũ Trọng Thanh",
         ["Nguyễn Tuấn"] = "Nguyễn Tuấn Hưng",
         ["Nguyễn Đăng"] = "Nguyễn Đăng Cơ",
+        ["Nguyễn Tất"] = "Nguyễn Tất Việt",
+        ["Nguyễn Văn"] = "Nguyễn Văn Duy",
+        ["CBơù ih Đọcình Trí"] = "Bùi Đình Trí",
     };
 
     private static void ReplaceSessions(
@@ -292,6 +361,10 @@ public static class PdfTimetableParser
         var lhpCode = row.LhpCode;
         var group = row.Group;
         var rawSessionType = row.SessionType;
+        var periodText = row.Period;
+        var roomText = row.Room;
+
+        RepairOverflowedPeriodAndRoom(ref periodText, ref roomText);
 
         if (string.IsNullOrWhiteSpace(rawSessionType))
         {
@@ -331,7 +404,7 @@ public static class PdfTimetableParser
 
         TimeSlot? timeSlot = null;
         if (TimetableSemantics.TryParseDay(row.Day, out var day) &&
-            TimetableSemantics.TryParsePeriod(row.Period, out var period))
+            TimetableSemantics.TryParsePeriod(periodText, out var period))
         {
             timeSlot = new TimeSlot(day, period);
         }
@@ -341,9 +414,9 @@ public static class PdfTimetableParser
         {
             room = GetOrCreateRoom("ONL", rooms);
         }
-        else if (!string.IsNullOrWhiteSpace(row.Room))
+        else if (!string.IsNullOrWhiteSpace(roomText))
         {
-            room = GetOrCreateRoom(NormalizeRoomCode(row.Room), rooms);
+            room = GetOrCreateRoom(NormalizeRoomCode(roomText), rooms);
         }
 
         try
@@ -366,17 +439,19 @@ public static class PdfTimetableParser
         {
             return ParsedRow.FromWarning(
                 $"PDF row {sourceRow}: {exception.Message} " +
-                $"(type='{rawSessionType}', day='{row.Day}', period='{row.Period}', room='{row.Room}')",
-                IsFatalScheduleGap(sessionType, row.Day, row.Period, row.Room));
+                $"(type='{rawSessionType}', day='{row.Day}', period='{periodText}', room='{roomText}')",
+                IsFatalScheduleGap(sessionType, row.Day, periodText, roomText));
         }
     }
 
     private static PdfVisualLine[] ReadLines(
         Page page,
         int pageNumber,
+        PdfTemplateProfile template,
         PdfTimetableParseOptions options,
         CancellationToken cancellationToken)
     {
+        var columns = template.Columns;
         var words = page.GetWords().Take(options.MaxWordsPerPage + 1).ToArray();
         if (words.Length > options.MaxWordsPerPage)
         {
@@ -397,14 +472,63 @@ public static class PdfTimetableParser
 
             if (currentLine is null || Math.Abs(currentLine.Bottom - word.BoundingBox.Bottom) > options.LineTolerance)
             {
-                currentLine = new PdfVisualLine(pageNumber, word.BoundingBox.Bottom);
+                currentLine = new PdfVisualLine(pageNumber, word.BoundingBox.Bottom, columns);
                 lines.Add(currentLine);
             }
 
-            currentLine.Add(word, Columns);
+            currentLine.Add(word);
+        }
+
+        if (template.UsesPrefixLetters)
+        {
+            var letters = page.Letters.Take(options.MaxWordsPerPage + 1).ToArray();
+            if (letters.Length > options.MaxWordsPerPage)
+            {
+                throw new InvalidDataException(
+                    $"PDF page {pageNumber.ToString(CultureInfo.InvariantCulture)} contains too many text elements.");
+            }
+
+            foreach (var letter in letters)
+            {
+                if (letter.BoundingBox.Left < columns.Class.Min ||
+                    letter.BoundingBox.Left >= columns.CourseName.Min + 20)
+                {
+                    continue;
+                }
+
+                var line = lines
+                    .Where(candidate => Math.Abs(candidate.Bottom - letter.BoundingBox.Bottom) <= options.LineTolerance)
+                    .MinBy(candidate => Math.Abs(candidate.Bottom - letter.BoundingBox.Bottom));
+                line?.AddPrefixLetter(letter);
+            }
         }
 
         return lines.OrderByDescending(line => line.Bottom).ToArray();
+    }
+
+    private static PdfTemplateProfile? SelectTemplate(
+        PdfDocument document,
+        PdfTimetableParseOptions options,
+        CancellationToken cancellationToken)
+    {
+        var pageCount = Math.Min(document.NumberOfPages, MaximumTemplateDetectionPages);
+        for (var pageNumber = 1; pageNumber <= pageCount; pageNumber++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var page = document.GetPage(pageNumber);
+            ValidatePage(page, pageNumber, options);
+
+            foreach (var template in Templates)
+            {
+                if (ReadLines(page, pageNumber, template, options, cancellationToken)
+                    .Any(IsTableHeader))
+                {
+                    return template;
+                }
+            }
+        }
+
+        return null;
     }
 
     private static bool TryStartRow(
@@ -430,6 +554,11 @@ public static class PdfTimetableParser
         !string.IsNullOrWhiteSpace(line.CourseName) ||
         !string.IsNullOrWhiteSpace(line.Lecturer) ||
         !string.IsNullOrWhiteSpace(line.Notes);
+
+    private static bool IsNextRowPrelude(PdfVisualLine line) =>
+        !string.IsNullOrWhiteSpace(line.ClassCode) &&
+        string.IsNullOrWhiteSpace(line.CourseCode) &&
+        !string.IsNullOrWhiteSpace(line.SessionType);
 
     private static bool IsTableHeader(PdfVisualLine line) =>
         line.ClassCode.Equals("Lớp", StringComparison.OrdinalIgnoreCase) &&
@@ -527,12 +656,27 @@ public static class PdfTimetableParser
         return lecturer;
     }
 
+    private static void RepairOverflowedPeriodAndRoom(ref string period, ref string room)
+    {
+        var match = OverflowedPeriodAndRoom.Match(period);
+        if (!match.Success || string.IsNullOrWhiteSpace(room))
+        {
+            return;
+        }
+
+        // The 2026 printed profile lets this long laboratory name flow from the
+        // period cell into the room cell (for example, "P3TN Thủy" + "Tin học-Viện").
+        period = match.Groups["period"].Value;
+        room = $"{match.Groups["room"].Value.Trim()} {room}";
+    }
+
     private static string NormalizeRoomCode(string value) => value switch
     {
         // The signed print template omits the campus suffix used by the XLSX
         // source for these two rooms. Keep their physical movement zone.
         "803-T5" => "803-T5 ĐHKHTN",
         "807-T5" => "807-T5 ĐHKHTN",
+        "TN Thủy Tin học-Viện" => "PTN Thủy Tin học-Viện Cơ học",
         _ => value,
     };
 
@@ -650,7 +794,9 @@ public static class PdfTimetableParser
 
         private static string AppendClass(string current, string value)
         {
-            if (string.IsNullOrWhiteSpace(value) || string.Equals(current, value, StringComparison.Ordinal))
+            if (string.IsNullOrWhiteSpace(value) ||
+                string.Equals(current, value, StringComparison.Ordinal) ||
+                current.StartsWith(value, StringComparison.Ordinal))
             {
                 return current;
             }
@@ -679,48 +825,51 @@ public static class PdfTimetableParser
     private sealed class PdfVisualLine
     {
         private readonly List<PdfWord> words = [];
+        private readonly List<string> prefixLetters = [];
+        private readonly PdfColumnBands columns;
 
-        public PdfVisualLine(int pageNumber, double bottom)
+        public PdfVisualLine(int pageNumber, double bottom, PdfColumnBands columns)
         {
             PageNumber = pageNumber;
             Bottom = bottom;
+            this.columns = columns;
         }
 
         public int PageNumber { get; }
 
         public double Bottom { get; }
 
-        public string ClassCode => Text(Columns.Class);
+        public string ClassCode => ClassAndCourse().ClassCode;
 
-        public string CourseCode => Text(Columns.CourseCode);
+        public string CourseCode => ClassAndCourse().CourseCode;
 
-        public string CourseName => Text(Columns.CourseName);
+        public string CourseName => Text(columns.CourseName);
 
-        public string Credits => Text(Columns.Credits);
+        public string Credits => Text(columns.Credits);
 
-        public string LtHours => Text(Columns.LtHours);
+        public string LtHours => Text(columns.LtHours);
 
-        public string ThHours => Text(Columns.ThHours);
+        public string ThHours => Text(columns.ThHours);
 
-        public string ClassSize => Text(Columns.ClassSize);
+        public string ClassSize => Text(columns.ClassSize);
 
-        public string LhpCode => Text(Columns.Lhp);
+        public string LhpCode => Text(columns.Lhp);
 
-        public string Group => Text(Columns.Group);
+        public string Group => Text(columns.Group);
 
-        public string SessionType => Text(Columns.SessionType);
+        public string SessionType => Text(columns.SessionType);
 
-        public string Day => Text(Columns.Day);
+        public string Day => Text(columns.Day);
 
-        public string Period => Text(Columns.Period);
+        public string Period => Text(columns.Period);
 
-        public string Room => Text(Columns.Room);
+        public string Room => Text(columns.Room);
 
-        public string Lecturer => Text(Columns.Lecturer);
+        public string Lecturer => Text(columns.Lecturer);
 
-        public string Notes => Text(Columns.Notes);
+        public string Notes => Text(columns.Notes);
 
-        public void Add(Word word, PdfColumnBands columns)
+        public void Add(Word word)
         {
             var left = word.BoundingBox.Left;
             if (left < columns.Class.Min || left >= columns.Notes.Max)
@@ -728,7 +877,62 @@ public static class PdfTimetableParser
                 return;
             }
 
+            var embeddedCourseCode = left < columns.CourseCode.Min
+                ? EmbeddedCourseCode.Match(word.Text)
+                : Match.Empty;
+            if (embeddedCourseCode.Success && embeddedCourseCode.Index > 0)
+            {
+                words.Add(new PdfWord(word.Text[..embeddedCourseCode.Index], left));
+                words.Add(new PdfWord(embeddedCourseCode.Value, columns.CourseCode.Min));
+                return;
+            }
+
             words.Add(new PdfWord(word.Text, left));
+        }
+
+        public void AddPrefixLetter(Letter letter) => prefixLetters.Add(letter.Value.ToString());
+
+        private (string ClassCode, string CourseCode) ClassAndCourse()
+        {
+            var classCode = Text(columns.Class);
+            var courseCode = Text(columns.CourseCode);
+            var lhpCourseCode = EmbeddedCourseCode.Match(Text(columns.Lhp));
+            var prefix = Normalize(string.Concat(prefixLetters));
+            if (lhpCourseCode.Success && lhpCourseCode.Index == 0)
+            {
+                var courseIndex = prefix.IndexOf(lhpCourseCode.Value, StringComparison.Ordinal);
+                if (courseIndex > 0)
+                {
+                    var letterClassCode = prefix[..courseIndex].Trim();
+                    if (LooksLikeClassCode(letterClassCode))
+                    {
+                        classCode = letterClassCode;
+                        courseCode = lhpCourseCode.Value;
+                    }
+                }
+            }
+
+            // PdfPig can merge a leading course-code character into the class cell
+            // when the two printed cells touch. The LHP repeats that code, but it
+            // is not generally the same as the course code, so only restore a
+            // single character that is demonstrably missing from the raw value.
+            if (lhpCourseCode.Success && lhpCourseCode.Index == 0 &&
+                lhpCourseCode.Value.Length == courseCode.Length + 1 &&
+                lhpCourseCode.Value.EndsWith(courseCode, StringComparison.Ordinal))
+            {
+                courseCode = lhpCourseCode.Value;
+            }
+
+            if (classCode.Length >= 3 &&
+                classCode[^3] == '.' &&
+                char.IsLetter(classCode[^2]) &&
+                char.IsDigit(classCode[^1]) &&
+                courseCode.StartsWith(classCode[^2].ToString(), StringComparison.Ordinal))
+            {
+                classCode = classCode.Remove(classCode.Length - 2, 1);
+            }
+
+            return (classCode, courseCode);
         }
 
         private string Text((double Min, double Max) band)
@@ -745,6 +949,11 @@ public static class PdfTimetableParser
     }
 
     private readonly record struct PdfWord(string Text, double Left);
+
+    private sealed record PdfTemplateProfile(
+        string Id,
+        PdfColumnBands Columns,
+        bool UsesPrefixLetters = false);
 
     private readonly record struct PdfColumnBands(
         (double Min, double Max) Class,

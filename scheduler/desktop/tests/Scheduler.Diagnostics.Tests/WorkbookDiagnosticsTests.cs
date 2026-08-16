@@ -29,6 +29,7 @@ public sealed class WorkbookDiagnosticsTests : IDisposable
         Assert.Equal(DiagnosticStatus.Failed, report.Status);
         var parserCheck = Assert.Single(report.Checks, check => check.Name == "workbook_parser");
         Assert.Equal(DiagnosticStatus.Failed, parserCheck.Status);
+        Assert.Equal("PDF parser could not accept the workbook.", parserCheck.Message);
         Assert.Equal((int)DiagnosticsExitCode.FailedChecks, report.ExitCode);
         Assert.DoesNotContain(path, DiagnosticsReportFactory.SerializeJson(report), StringComparison.Ordinal);
     }

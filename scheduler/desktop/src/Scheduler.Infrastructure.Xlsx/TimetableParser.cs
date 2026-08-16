@@ -378,7 +378,7 @@ public sealed class TimetableParser
             Find("ltbtth", "ltth", "loai"),
             Find("thu"),
             Find("ca"),
-            Find("gd", "phong", "phonghoc"),
+            Find("gd", "giangduong", "phong", "phonghoc"),
             Find("giangvien", "gv"),
             Find("ghichuhoc", "ghichu"),
             null);

@@ -38,6 +38,7 @@ internal static class WorkbookDiagnostics
             return DiagnosticsReportFactory.Create(options, "workbook", checks);
         }
 
+        var formatName = string.Equals(extension, ".pdf", StringComparison.OrdinalIgnoreCase) ? "PDF" : "XLSX";
         try
         {
             var result = string.Equals(extension, ".pdf", StringComparison.OrdinalIgnoreCase)
@@ -69,9 +70,9 @@ internal static class WorkbookDiagnostics
                 parserStatus,
                 parserStatus == DiagnosticStatus.Passed
                     ? result.Warnings.IsEmpty
-                        ? $"{(string.Equals(extension, ".pdf", StringComparison.OrdinalIgnoreCase) ? "PDF" : "XLSX")} parser accepted the workbook."
-                        : $"{(string.Equals(extension, ".pdf", StringComparison.OrdinalIgnoreCase) ? "PDF" : "XLSX")} parser accepted the workbook with non-blocking warnings."
-                    : $"{(string.Equals(extension, ".pdf", StringComparison.OrdinalIgnoreCase) ? "PDF" : "XLSX")} parser found blocking warnings.",
+                        ? $"{formatName} parser accepted the workbook."
+                        : $"{formatName} parser accepted the workbook with non-blocking warnings."
+                    : $"{formatName} parser found blocking warnings.",
                 metrics,
                 detail: detail));
         }
@@ -81,7 +82,7 @@ internal static class WorkbookDiagnostics
                 options,
                 "workbook_parser",
                 DiagnosticStatus.Failed,
-                "XLSX parser could not accept the workbook.",
+                $"{formatName} parser could not accept the workbook.",
                 detail: DiagnosticsReportFactory.ExceptionDetail(exception)));
         }
 

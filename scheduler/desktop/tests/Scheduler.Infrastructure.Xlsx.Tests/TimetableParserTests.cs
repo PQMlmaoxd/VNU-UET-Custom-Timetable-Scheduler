@@ -284,7 +284,7 @@ public sealed class TimetableParserTests : IDisposable
             [13] = "LT/BT/TH",
             [14] = "Thứ",
             [15] = "Ca",
-            [16] = "GĐ",
+            [16] = "Giảng đường",
             [17] = "Giảng viên",
             [18] = "Ghi chú học",
         });
