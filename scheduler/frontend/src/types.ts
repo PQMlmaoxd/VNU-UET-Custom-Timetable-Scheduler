@@ -128,6 +128,28 @@ export type RescheduleResponse = {
   solved_schedule_validation: ValidationSummary | null;
 };
 
+export type TimetableDocument = {
+  schema: string;
+  schema_version: number;
+  saved_at_utc: string;
+  app_version: string;
+  source: {
+    file_name: string;
+  };
+  timetable: RescheduleResponse;
+};
+
+export type LoadedTimetableDocument = {
+  file_name: string;
+  saved_at_utc: string;
+  app_version: string;
+};
+
+export type SaveTimetableResponse = {
+  saved: boolean;
+  file_name: string | null;
+};
+
 export type CourseCatalogItem = {
   key: string;
   course_code: string;

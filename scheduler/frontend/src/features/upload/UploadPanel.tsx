@@ -43,7 +43,7 @@ export function UploadPanel({
           <input
             className="sr-only"
             type="file"
-            accept={isDesktopApp() ? ".xlsx,.pdf" : ".xlsx"}
+            accept={isDesktopApp() ? ".xlsx,.pdf,.json" : ".xlsx,.json"}
             aria-label={COPY.upload.inputLabel}
             onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
           />

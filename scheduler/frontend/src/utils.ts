@@ -141,8 +141,12 @@ export function isPdfFile(file: File | null): boolean {
   return Boolean(file && /\.pdf$/i.test(file.name));
 }
 
+export function isTimetableJsonFile(file: File | null): boolean {
+  return Boolean(file && /\.json$/i.test(file.name));
+}
+
 export function isSupportedTimetableFile(file: File | null, desktopApp: boolean): boolean {
-  return isXlsxFile(file) || (desktopApp && isPdfFile(file));
+  return isXlsxFile(file) || isTimetableJsonFile(file) || (desktopApp && isPdfFile(file));
 }
 
 export function normalizedLhpSchedules(anchor: DesiredAnchorSummary): LhpScheduleItem[] {

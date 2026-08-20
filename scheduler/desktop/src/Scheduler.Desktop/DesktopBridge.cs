@@ -245,6 +245,7 @@ public sealed class DesktopBridgeSession : IDisposable
         "validate_workbook" => "validate_workbook",
         "solve_workbook" => "solve_workbook",
         "export_unsat_artifact" => "export_unsat_artifact",
+        "save_timetable" => "save_timetable",
         "cancel_command" => "cancel_command",
         "set_theme" => "set_theme",
         "desktop_ready" => "desktop_ready",
@@ -252,7 +253,7 @@ public sealed class DesktopBridgeSession : IDisposable
     };
 
     private static bool IsHeavyCommand(string method) => method is
-        "validate_workbook" or "solve_workbook" or "export_unsat_artifact";
+        "validate_workbook" or "solve_workbook" or "export_unsat_artifact" or "save_timetable";
 
     private async Task RecordActivityAsync(string requestId, string command, string outcome, TimeSpan elapsed)
     {

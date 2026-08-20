@@ -122,8 +122,13 @@ const solveResponse = {
   ],
 };
 
+const saveResponse = {
+  saved: true,
+  file_name: "TKB-ALL-20260821-1530.json",
+};
+
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(({ validate, solve }) => {
+  await page.addInitScript(({ validate, solve, save }) => {
     const listeners = new Set<(event: MessageEvent<unknown>) => void>();
     const webView = {
       addEventListener: (_event: "message", listener: (event: MessageEvent<unknown>) => void) => {
@@ -145,6 +150,8 @@ test.beforeEach(async ({ page }) => {
               ? solve
               : request.method === "cancel_command"
                 ? { cancelled: true }
+                : request.method === "save_timetable"
+                  ? save
                 : {};
           const response = {
             protocol_version: 1,
@@ -162,7 +169,7 @@ test.beforeEach(async ({ page }) => {
       configurable: true,
       value: { webview: webView },
     });
-  }, { validate: validateResponse, solve: solveResponse });
+  }, { validate: validateResponse, solve: solveResponse, save: saveResponse });
 });
 
 test("happy path is keyboard-readable and has no critical/serious axe issues", async ({ page }, testInfo) => {
@@ -209,6 +216,60 @@ test("happy path is keyboard-readable and has no critical/serious axe issues", a
     violation.impact === "critical" || violation.impact === "serious",
   );
   expect(seriousViolations).toEqual([]);
+});
+
+test("loads a saved JSON timetable directly into results", async ({ page }, testInfo) => {
+  await page.goto("/app/");
+  await page.setInputFiles('input[type="file"]', {
+    name: "saved-timetable.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({
+      schema: "vnu-uet-timetable",
+      schema_version: 1,
+      saved_at_utc: "2026-08-21T08:30:00Z",
+      app_version: "1.0.1",
+      source: { file_name: "timetable.xlsx" },
+      timetable: solveResponse,
+    })),
+  });
+
+  await page.getByRole("button", { name: "Đọc thời khóa biểu" }).click();
+  await expect(page.getByRole("heading", { name: "Đã tìm thấy lịch" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Chọn môn và nhóm giảng dạy/ })).not.toBeVisible();
+  if (testInfo.project.name === "chromium-mobile") {
+    await expect(page.getByLabel("Lịch theo ngày")).toContainText("INT2213");
+  } else {
+    await expect(page.getByRole("button", { name: /INT2213, INT2213-01/ })).toBeVisible();
+  }
+});
+
+test("saves a loaded SAT timetable through the desktop bridge", async ({ page }) => {
+  await page.goto("/app/");
+  await page.setInputFiles('input[type="file"]', {
+    name: "saved-timetable.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({
+      schema: "vnu-uet-timetable",
+      schema_version: 1,
+      saved_at_utc: "2026-08-21T08:30:00Z",
+      app_version: "1.0.1",
+      source: { file_name: "timetable.xlsx" },
+      timetable: solveResponse,
+    })),
+  });
+
+  await page.getByRole("button", { name: "Đọc thời khóa biểu" }).click();
+  await page.getByRole("heading", { name: "Đã tìm thấy lịch" }).waitFor();
+  await page.getByRole("button", { name: "Lưu thời khóa biểu (.json)" }).click();
+  await expect(page.getByText("Đã lưu TKB-ALL-20260821-1530.json.", { exact: true })).toBeVisible();
+
+  const saveRequest = await page.evaluate(() => {
+    const bridgeWindow = window as Window & {
+      __schedulerBridgeRequests?: Array<{ method: string; payload?: { source_file_name?: string } }>;
+    };
+    return bridgeWindow.__schedulerBridgeRequests?.find(request => request.method === "save_timetable");
+  });
+  expect(saveRequest?.payload?.source_file_name).toBe("saved-timetable.json");
 });
 
 test("persists dark theme and keeps the laptop workspace bounded", async ({ page }, testInfo) => {

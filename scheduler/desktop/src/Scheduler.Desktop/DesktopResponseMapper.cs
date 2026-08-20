@@ -275,6 +275,21 @@ public static class DesktopResponseMapper
         [property: JsonPropertyName("solver")] SolverSummary Solver,
         [property: JsonPropertyName("solved_schedule_validation")] ValidationSummary? SolvedScheduleValidation);
 
+    public sealed record TimetableDocument(
+        [property: JsonPropertyName("schema")] string Schema,
+        [property: JsonPropertyName("schema_version")] int SchemaVersion,
+        [property: JsonPropertyName("saved_at_utc")] DateTimeOffset SavedAtUtc,
+        [property: JsonPropertyName("app_version")] string AppVersion,
+        [property: JsonPropertyName("source")] TimetableDocumentSource Source,
+        [property: JsonPropertyName("timetable")] JsonElement Timetable);
+
+    public sealed record TimetableDocumentSource(
+        [property: JsonPropertyName("file_name")] string FileName);
+
+    public sealed record SaveTimetableResponse(
+        [property: JsonPropertyName("saved")] bool Saved,
+        [property: JsonPropertyName("file_name")] string? FileName);
+
     public sealed record ParseSummary(
         [property: JsonPropertyName("sessions")] int Sessions,
         [property: JsonPropertyName("schedulable_sessions")] int SchedulableSessions,

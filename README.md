@@ -27,9 +27,16 @@ The desktop application accepts:
 
 - XLSX files using the current fixed timetable schema.
 - The signed, text-native UET PDF template implemented by the PDF importer.
+- Versioned JSON timetable files saved from a SAT result.
 
 The desktop host is the supported runtime. Unsupported PDF layouts and scanned
 PDFs are rejected rather than parsed heuristically.
+
+XLSX and PDF inputs follow the normal validation, course-selection, and solve
+workflow. A saved JSON timetable is already solved, so it opens directly in the
+results view. JSON loading is handled in the frontend and is also available in
+browser development mode; saving is a desktop-only action that opens a native
+Save dialog and writes `TKB-<department>-<yyyyMMdd-HHmm>.json` by default.
 
 ## Movement Cost
 

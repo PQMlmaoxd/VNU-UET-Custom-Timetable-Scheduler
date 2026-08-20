@@ -39,6 +39,12 @@ describe("frontend helpers", () => {
     expect(isSupportedTimetableFile(pdf, false)).toBe(false);
   });
 
+  it("allows saved JSON timetables in both desktop and browser modes", () => {
+    const json = new File(["{}"], "schedule.json", { type: "application/json" });
+    expect(isSupportedTimetableFile(json, true)).toBe(true);
+    expect(isSupportedTimetableFile(json, false)).toBe(true);
+  });
+
   it("falls back to matched_sessions when lhp_schedules is missing", () => {
     const anchor: DesiredAnchorSummary = {
       course_code: "INT2213",

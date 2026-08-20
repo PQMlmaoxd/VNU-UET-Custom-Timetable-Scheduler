@@ -17,6 +17,7 @@ class FakeDesktopWebView {
   constructor(
     private readonly autoRespond: boolean,
     private readonly response: unknown = workbookResponse,
+    private readonly commandResults: Record<string, unknown> = {},
   ) {}
 
   addEventListener(_event: "message", listener: (event: MessageEvent<unknown>) => void) {
@@ -34,7 +35,9 @@ class FakeDesktopWebView {
       return;
     }
 
-    const result = request.method === "validate_workbook" ? this.response : {};
+    const result = request.method === "validate_workbook"
+      ? this.response
+      : this.commandResults[request.method] ?? {};
     this.respond({ protocol_version: 1, id: request.id, ok: true, result });
   }
 
@@ -118,13 +121,97 @@ function makeTimetableFile(contents: string, name: string): File {
   return file;
 }
 
-function mockDesktopBridge(autoRespond = true, response: unknown = workbookResponse) {
-  const webView = new FakeDesktopWebView(autoRespond, response);
+function mockDesktopBridge(
+  autoRespond = true,
+  response: unknown = workbookResponse,
+  commandResults: Record<string, unknown> = {},
+) {
+  const webView = new FakeDesktopWebView(autoRespond, response, commandResults);
   Object.defineProperty(window, "chrome", {
     configurable: true,
     value: { webview: webView },
   });
   return webView;
+}
+
+const savedTimetableResponse = {
+  mode: "reschedule",
+  workbook_path: "timetable.xlsx",
+  department: "CNTT",
+  parse_summary: { ...workbookResponse.parse_summary, requested_assignments: 1 },
+  prototype_catalog: workbookResponse.prototype_catalog,
+  desired_assignments: [],
+  existing_schedule_validation: workbookResponse.existing_schedule_validation,
+  solved_schedule_validation: null,
+  solver: {
+    backend: "personal_sat",
+    status: "feasible",
+    satisfiability: "SAT",
+    solve_time_ms: 12,
+    objective_value: null,
+    assignment_count: 1,
+    solution_count: 1,
+    solver_info: "fixture",
+    explanation: [],
+    formal_verification_token: null,
+  },
+  solutions: [{
+    solution_index: 1,
+    movement_cost: 0,
+    desired_assignments: [{
+      course_code: "INT2213",
+      teaching_team_key: "team-nguyen-a",
+      teaching_team_label: "Nguyễn A",
+      course_name: "Mạng Máy Tính",
+      lhp_codes: ["INT2213-01"],
+      session_count: 1,
+      matched_sessions: [],
+      lhp_schedules: [{
+        lhp_code: "INT2213-01",
+        session_count: 1,
+        matched_sessions: [{
+          session_id: "row_1",
+          course_code: "INT2213",
+          course_name: "Mạng Máy Tính",
+          lhp_code: "INT2213-01",
+          session_type: "LT",
+          lecturer_names: ["Nguyễn A"],
+          cohort_codes: ["K69I"],
+          timeslot_label: "Thứ 2 Ca 1",
+          room_code: "105-B",
+          source_row: 1,
+          day: 2,
+          period_code: "1",
+          period_atomic: ["1"],
+        }],
+      }],
+    }],
+  }],
+};
+
+function makeSavedTimetableFile(
+  name = "saved-timetable.json",
+  overrides: Record<string, unknown> = {},
+): File {
+  const document = {
+    schema: "vnu-uet-timetable",
+    schema_version: 1,
+    saved_at_utc: "2026-08-21T08:30:00Z",
+    app_version: "1.0.1",
+    source: { file_name: "timetable.xlsx" },
+    timetable: savedTimetableResponse,
+    ...overrides,
+  };
+  const contents = JSON.stringify(document);
+  const file = new File([contents], name, { type: "application/json" });
+  Object.defineProperty(file, "text", { value: async () => contents });
+  return file;
+}
+
+function makeInvalidJsonFile(name = "broken.json"): File {
+  const file = new File(["not json"], name, { type: "application/json" });
+  Object.defineProperty(file, "text", { value: async () => "not json" });
+  return file;
 }
 
 afterEach(() => {
@@ -173,6 +260,95 @@ describe("App", () => {
       expect(screen.getByRole("heading", { name: COPY.selection.heading })).toBeInTheDocument();
     });
     expect(document.body.textContent).not.toMatch(/workbook|solver|backend|parser|native worker|SAT selector|nghiệm|tổ hợp|ràng buộc/i);
+  });
+
+  it("loads a saved JSON timetable directly into the results step", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, makeSavedTimetableFile());
+    await user.click(screen.getByRole("button", { name: COPY.upload.readButton }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: COPY.results.validHeading })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("heading", { name: COPY.selection.heading })).not.toBeInTheDocument();
+    expect(screen.queryByText(COPY.results.loadedSelectionDetail)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /INT2213, INT2213-01/ })).toBeInTheDocument();
+  });
+
+  it("rejects an invalid saved JSON file without leaving the upload step", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, makeInvalidJsonFile());
+    await user.click(screen.getByRole("button", { name: COPY.upload.readButton }));
+
+    await waitFor(() => expect(screen.getByText("File không phải là JSON hợp lệ.")).toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: COPY.upload.heading })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: COPY.results.validHeading })).not.toBeInTheDocument();
+  });
+
+  it("rejects a saved JSON document from a newer schema version", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, makeSavedTimetableFile("future.json", { schema_version: 2 }));
+    await user.click(screen.getByRole("button", { name: COPY.upload.readButton }));
+
+    await waitFor(() => expect(screen.getByText(COPY.upload.jsonNewerDetail)).toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: COPY.upload.heading })).toBeInTheDocument();
+  });
+
+  it("saves a loaded SAT timetable through the desktop bridge", async () => {
+    const user = userEvent.setup();
+    const webView = mockDesktopBridge(true, workbookResponse, {
+      save_timetable: { saved: true, file_name: "TKB-CNTT-20260821-1530.json" },
+    });
+    render(<App />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, makeSavedTimetableFile());
+    await user.click(screen.getByRole("button", { name: COPY.upload.readButton }));
+    await screen.findByRole("heading", { name: COPY.results.validHeading });
+    await user.click(screen.getByRole("button", { name: COPY.results.saveTimetable }));
+
+    await waitFor(() => expect(screen.getByText(COPY.results.savedTimetableDetail("TKB-CNTT-20260821-1530.json"))).toBeInTheDocument());
+    const request = webView.messages.find((message) => (message as DesktopMessage).method === "save_timetable") as {
+      method: string;
+      payload: { source_file_name: string };
+    };
+    expect(request.method).toBe("save_timetable");
+    expect(request.payload.source_file_name).toBe("saved-timetable.json");
+  });
+
+  it("does not show the desktop save action in browser mode", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, makeSavedTimetableFile());
+    await user.click(screen.getByRole("button", { name: COPY.upload.readButton }));
+    await screen.findByRole("heading", { name: COPY.results.validHeading });
+
+    expect(screen.queryByRole("button", { name: COPY.results.saveTimetable })).not.toBeInTheDocument();
+  });
+
+  it("resets a loaded timetable when another file is selected", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, makeSavedTimetableFile());
+    await user.click(screen.getByRole("button", { name: COPY.upload.readButton }));
+    await screen.findByRole("heading", { name: COPY.results.validHeading });
+    await user.click(screen.getByRole("button", { name: COPY.results.chooseAnotherFile }));
+
+    expect(screen.getByRole("heading", { name: COPY.upload.heading })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: COPY.results.validHeading })).not.toBeInTheDocument();
   });
 
   it("clears a committed course when its combobox text is edited", async () => {

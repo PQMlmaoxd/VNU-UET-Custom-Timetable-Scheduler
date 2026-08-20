@@ -68,7 +68,7 @@ public sealed class DesktopBridgeTests
         await dispatcher.Started.Task;
 
         var second = await bridge.HandleAsync(
-            """{"protocol_version":1,"id":"validate-1","method":"validate_workbook","payload":{}}""");
+            """{"protocol_version":1,"id":"save-1","method":"save_timetable","payload":{}}""");
         using var secondDocument = JsonDocument.Parse(second);
         Assert.False(secondDocument.RootElement.GetProperty("ok").GetBoolean());
         Assert.Contains("đang chạy", secondDocument.RootElement.GetProperty("error").GetString());

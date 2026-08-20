@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { exportUnsatArtifact, notifyDesktopReady, setDesktopTheme, solveWorkbook, validateWorkbook } from "./api";
+import {
+  exportUnsatArtifact,
+  notifyDesktopReady,
+  saveTimetable,
+  setDesktopTheme,
+  solveWorkbook,
+  validateWorkbook,
+} from "./api";
+import type { RescheduleResponse } from "./types";
 
 type DesktopMessageListener = (event: MessageEvent<unknown>) => void;
 
@@ -238,6 +246,96 @@ describe("desktop bridge API", () => {
     });
 
     await expect(exportRequest).resolves.toMatchObject({ exported: true });
+  });
+
+  it("saves a SAT timetable through the desktop bridge", async () => {
+    const webView = new FakeDesktopWebView();
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: webView },
+    });
+    const timetable = validateResponse as unknown as RescheduleResponse;
+    const saveRequest = saveTimetable(timetable, "schedule.xlsx");
+
+    await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
+    const request = webView.messages[0] as {
+      id: string;
+      method: string;
+      payload: { timetable: unknown; source_file_name: string };
+    };
+    expect(request.method).toBe("save_timetable");
+    expect(request.payload.timetable).toBe(timetable);
+    expect(request.payload.source_file_name).toBe("schedule.xlsx");
+    webView.respond({
+      protocol_version: 1,
+      id: request.id,
+      ok: true,
+      result: { saved: true, file_name: "TKB-CNTT-20260821-1530.json" },
+    });
+
+    await expect(saveRequest).resolves.toEqual({
+      saved: true,
+      file_name: "TKB-CNTT-20260821-1530.json",
+    });
+  });
+
+  it("returns a native dialog cancellation from timetable save", async () => {
+    const webView = new FakeDesktopWebView();
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: webView },
+    });
+    const saveRequest = saveTimetable({} as RescheduleResponse, "schedule.json");
+
+    await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
+    const request = webView.messages[0] as { id: string };
+    webView.respond({
+      protocol_version: 1,
+      id: request.id,
+      ok: true,
+      result: { saved: false, file_name: null },
+    });
+
+    await expect(saveRequest).resolves.toEqual({ saved: false, file_name: null });
+  });
+
+  it("rejects a malformed timetable save response", async () => {
+    const webView = new FakeDesktopWebView();
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: webView },
+    });
+    const saveRequest = saveTimetable({} as RescheduleResponse, "schedule.json");
+
+    await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
+    const request = webView.messages[0] as { id: string };
+    webView.respond({
+      protocol_version: 1,
+      id: request.id,
+      ok: true,
+      result: { saved: "yes", file_name: null },
+    });
+
+    await expect(saveRequest).rejects.toThrow("Desktop bridge returned an invalid result.");
+  });
+
+  it("cancels an active timetable save when the caller aborts", async () => {
+    const webView = new FakeDesktopWebView();
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: webView },
+    });
+    const cancellation = new AbortController();
+    const saveRequest = saveTimetable({} as RescheduleResponse, "schedule.json", cancellation.signal);
+
+    await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
+    cancellation.abort();
+
+    await expect(saveRequest).rejects.toMatchObject({ name: "AbortError" });
+    expect(webView.messages[1]).toMatchObject({
+      method: "cancel_command",
+      payload: { target_id: (webView.messages[0] as { id: string }).id },
+    });
   });
 
   it("cancels a desktop command when the bridge timeout expires", async () => {

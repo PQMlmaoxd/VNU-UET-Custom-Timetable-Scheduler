@@ -26,10 +26,12 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
     // larger transient memory footprint in both renderer and host processes.
     private const int MaxWorkbookBytes = 25 * 1024 * 1024;
     private const int MaxWorkbookBase64Characters = ((MaxWorkbookBytes + 2) / 3) * 4;
+    private const int MaxTimetableDocumentBytes = 25 * 1024 * 1024;
     private const int MaxDesiredAssignments = 100;
     private const int MaxAssignmentFieldCharacters = 512;
     private readonly Func<IPersonalSelectionSatSolver> createSolver;
     private readonly Func<string?> chooseFormalArtifactPath;
+    private readonly Func<string, string?> chooseTimetablePath;
     private readonly ConcurrentDictionary<string, UnsatVerificationTicket> unsatTickets = new(StringComparer.Ordinal);
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
@@ -38,17 +40,19 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
     };
 
     public DesktopCommandDispatcher()
-        : this(CreateNativeSolver, ChooseFormalArtifactPath)
+        : this(CreateNativeSolver, ChooseFormalArtifactPath, ChooseTimetablePath)
     {
     }
 
     public DesktopCommandDispatcher(
         Func<IPersonalSelectionSatSolver> createSolver,
-        Func<string?>? chooseFormalArtifactPath = null)
+        Func<string?>? chooseFormalArtifactPath = null,
+        Func<string, string?>? chooseTimetablePath = null)
     {
         ArgumentNullException.ThrowIfNull(createSolver);
         this.createSolver = createSolver;
         this.chooseFormalArtifactPath = chooseFormalArtifactPath ?? ChooseFormalArtifactPath;
+        this.chooseTimetablePath = chooseTimetablePath ?? ChooseTimetablePath;
     }
 
     public async Task<JsonElement> DispatchAsync(
@@ -61,6 +65,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
             "validate_workbook" => await ValidateWorkbookAsync(payload, cancellationToken),
             "solve_workbook" => await SolveWorkbookAsync(payload, cancellationToken),
             "export_unsat_artifact" => await ExportUnsatArtifactAsync(payload, cancellationToken),
+            "save_timetable" => await SaveTimetableAsync(payload, cancellationToken),
             _ => throw new DesktopBridgeException($"Unsupported desktop command '{method}'."),
         };
     }
@@ -271,6 +276,62 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         }
     }
 
+    private async Task<JsonElement> SaveTimetableAsync(
+        JsonElement payload,
+        CancellationToken cancellationToken)
+    {
+        var command = Deserialize<SaveTimetableCommand>(payload);
+        ValidateTimetableForSave(command.Timetable);
+
+        var department = GetRequiredString(command.Timetable, "department");
+        var sourceFileName = NormalizeSourceFileName(command.SourceFileName);
+        var defaultFileName = CreateTimetableFileName(department, DateTimeOffset.Now);
+        var outputPath = chooseTimetablePath(defaultFileName);
+        if (string.IsNullOrWhiteSpace(outputPath))
+        {
+            return DesktopResponseMapper.ToJson(new DesktopResponseMapper.SaveTimetableResponse(false, null));
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var document = new DesktopResponseMapper.TimetableDocument(
+            "vnu-uet-timetable",
+            1,
+            DateTimeOffset.UtcNow,
+            DesktopReleaseMetadata.ApplicationVersion,
+            new DesktopResponseMapper.TimetableDocumentSource(sourceFileName),
+            command.Timetable);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(document, TimetableDocumentSerializerOptions);
+        if (bytes.Length > MaxTimetableDocumentBytes)
+        {
+            throw new DesktopBridgeException("Thời khóa biểu JSON vượt quá giới hạn 25 MB.");
+        }
+
+        var fullPath = Path.GetFullPath(outputPath);
+        var outputDirectory = Path.GetDirectoryName(fullPath)
+            ?? throw new DesktopBridgeException("Không thể xác định thư mục lưu thời khóa biểu.");
+        Directory.CreateDirectory(outputDirectory);
+        var temporaryPath = Path.Combine(
+            outputDirectory,
+            $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+
+        try
+        {
+            await File.WriteAllBytesAsync(temporaryPath, bytes, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(temporaryPath, fullPath, overwrite: true);
+            return DesktopResponseMapper.ToJson(new DesktopResponseMapper.SaveTimetableResponse(
+                true,
+                Path.GetFileName(fullPath)));
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+        }
+    }
+
     private string CreateUnsatVerificationTicket(
         string sourceSha256,
         string cnfSha256,
@@ -360,6 +421,79 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         }
     }
 
+    private static void ValidateTimetableForSave(JsonElement timetable)
+    {
+        if (timetable.ValueKind != JsonValueKind.Object ||
+            !string.Equals(GetOptionalString(timetable, "mode"), "reschedule", StringComparison.Ordinal))
+        {
+            throw new DesktopBridgeException("Chỉ có thể lưu kết quả thời khóa biểu hợp lệ.");
+        }
+
+        var solver = timetable.TryGetProperty("solver", out var solverElement) &&
+            solverElement.ValueKind == JsonValueKind.Object
+            ? solverElement
+            : throw new DesktopBridgeException("Kết quả thời khóa biểu thiếu thông tin solver.");
+        if (!string.Equals(GetOptionalString(solver, "satisfiability"), "SAT", StringComparison.Ordinal))
+        {
+            throw new DesktopBridgeException("Chỉ có thể lưu thời khóa biểu khi đã tìm thấy lời giải.");
+        }
+
+        if (!solver.TryGetProperty("solution_count", out var solutionCount) ||
+            solutionCount.ValueKind != JsonValueKind.Number ||
+            !solutionCount.TryGetInt32(out var count) ||
+            count < 1)
+        {
+            throw new DesktopBridgeException("Kết quả thời khóa biểu không có phương án để lưu.");
+        }
+
+        if (!timetable.TryGetProperty("solutions", out var solutions) ||
+            solutions.ValueKind != JsonValueKind.Array ||
+            solutions.GetArrayLength() != count)
+        {
+            throw new DesktopBridgeException("Danh sách phương án thời khóa biểu không hợp lệ.");
+        }
+    }
+
+    private static string GetRequiredString(JsonElement element, string propertyName)
+    {
+        var value = GetOptionalString(element, propertyName);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new DesktopBridgeException($"Kết quả thời khóa biểu thiếu trường {propertyName}.");
+        }
+
+        return value;
+    }
+
+    private static string? GetOptionalString(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : null;
+
+    private static string NormalizeSourceFileName(string? sourceFileName)
+    {
+        var normalized = (sourceFileName ?? string.Empty).Replace('\\', '/');
+        normalized = Path.GetFileName(normalized);
+        return string.IsNullOrWhiteSpace(normalized) ? "unknown" : normalized[..Math.Min(normalized.Length, 260)];
+    }
+
+    private static string CreateTimetableFileName(string department, DateTimeOffset now)
+    {
+        var invalidCharacters = Path.GetInvalidFileNameChars();
+        var safeDepartment = new string(department
+            .Select(character => invalidCharacters.Contains(character) || char.IsWhiteSpace(character)
+                ? '-'
+                : character)
+            .ToArray())
+            .Trim('-');
+        if (string.IsNullOrWhiteSpace(safeDepartment))
+        {
+            safeDepartment = "unknown";
+        }
+
+        return $"TKB-{safeDepartment}-{now:yyyyMMdd-HHmm}.json";
+    }
+
     private static void ValidateDesiredAssignments(ImmutableArray<DesiredAssignmentPayload> assignments)
     {
         if (assignments.Length is < 1 or > MaxDesiredAssignments)
@@ -405,12 +539,21 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         public IEnumerable<DesiredAssignmentPayload> DesiredAssignments => RequestedAssignments ?? [];
     }
 
+    private sealed record SaveTimetableCommand(
+        [property: JsonPropertyName("timetable")] JsonElement Timetable,
+        [property: JsonPropertyName("source_file_name")] string? SourceFileName);
+
     private sealed record ExportUnsatArtifactResponse(
         [property: JsonPropertyName("exported")] bool Exported,
         [property: JsonPropertyName("file_name")] string? FileName,
         [property: JsonPropertyName("cnf_sha256")] string? CnfSha256,
         [property: JsonPropertyName("variable_count")] int? VariableCount,
         [property: JsonPropertyName("clause_count")] int? ClauseCount);
+
+    private static readonly JsonSerializerOptions TimetableDocumentSerializerOptions = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true,
+    };
 
     private sealed record UnsatVerificationTicket(
         string SourceSha256,
@@ -601,6 +744,21 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
             Filter = "ZIP archive (*.zip)|*.zip",
             OverwritePrompt = true,
             Title = "Xuất gói kiểm chứng UNSAT",
+        };
+
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
+    }
+
+    private static string? ChooseTimetablePath(string defaultFileName)
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            AddExtension = true,
+            DefaultExt = ".json",
+            FileName = defaultFileName,
+            Filter = "Timetable JSON (*.json)|*.json",
+            OverwritePrompt = true,
+            Title = "Lưu thời khóa biểu",
         };
 
         return dialog.ShowDialog() == true ? dialog.FileName : null;

@@ -29,6 +29,9 @@ type ResultsPanelProps = {
   onCancel: () => void;
   onExportUnsat: () => void;
   isExportingUnsat: boolean;
+  onSaveTimetable: () => void;
+  isSavingTimetable: boolean;
+  isLoadedDocument: boolean;
   onBackToSelection: () => void;
   onReset: () => void;
   headingRef: RefObject<HTMLHeadingElement>;
@@ -44,6 +47,9 @@ export function ResultsPanel({
   onCancel,
   onExportUnsat,
   isExportingUnsat,
+  onSaveTimetable,
+  isSavingTimetable,
+  isLoadedDocument,
   onBackToSelection,
   onReset,
   headingRef,
@@ -79,7 +85,7 @@ export function ResultsPanel({
   }
 
   const currentSolution = response.solutions[solutionIndex] ?? response.solutions[0] ?? null;
-  const isSat = response.solver.satisfiability === "SAT" && currentSolution;
+  const isSat = response.solver.satisfiability === "SAT" && currentSolution !== null;
   const isUnsat = response.solver.satisfiability === "UNSAT";
   const hasSolutionTabs = response.solutions.length > 1;
 
@@ -140,7 +146,14 @@ export function ResultsPanel({
       <aside className="card rail-card result-rail" aria-label={COPY.results.railLabel}>
         {currentSolution ? <SolutionRail solution={currentSolution} /> : <EmptyRail text={COPY.results.emptyRail} />}
         <div className="rail-actions">
-          <button className="button secondary" type="button" onClick={onBackToSelection}>{COPY.results.changeSelection}</button>
+          {isSat && isDesktopApp() ? (
+            <button className="button primary" type="button" disabled={isSavingTimetable} onClick={onSaveTimetable}>
+              {isSavingTimetable ? COPY.results.savingTimetable : COPY.results.saveTimetable}
+            </button>
+          ) : null}
+          {!isLoadedDocument ? (
+            <button className="button secondary" type="button" onClick={onBackToSelection}>{COPY.results.changeSelection}</button>
+          ) : null}
           <button className="button ghost" type="button" onClick={onReset}>{COPY.results.chooseAnotherFile}</button>
         </div>
       </aside>

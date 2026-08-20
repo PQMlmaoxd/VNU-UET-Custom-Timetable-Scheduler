@@ -4,6 +4,7 @@ import {
   exportUnsatArtifact,
   isDesktopApp,
   notifyDesktopReady,
+  saveTimetable as saveTimetableDocument,
   setDesktopTheme,
   solveWorkbook,
   validateWorkbook,
@@ -24,6 +25,7 @@ import {
 import type {
   CourseCatalogItem,
   RescheduleResponse,
+  LoadedTimetableDocument,
   SelectionRow,
   SolveState,
   StepId,
@@ -35,9 +37,11 @@ import {
   clampTimeout,
   hasIncompleteSelections,
   isSupportedTimetableFile,
+  isTimetableJsonFile,
   selectedAssignments,
 } from "./utils";
 import type { AppStatus } from "./components/Notice";
+import { MAX_TIMETABLE_DOCUMENT_BYTES, parseTimetableDocument } from "./timetableDocument";
 
 function blankSelection(): SelectionRow {
   return {
@@ -65,11 +69,14 @@ function App() {
   const [isLoadingWorkbook, setIsLoadingWorkbook] = useState(false);
   const [solveState, setSolveState] = useState<SolveState>("idle");
   const [solveResponse, setSolveResponse] = useState<RescheduleResponse | null>(null);
+  const [loadedDocument, setLoadedDocument] = useState<LoadedTimetableDocument | null>(null);
   const [isExportingUnsat, setIsExportingUnsat] = useState(false);
+  const [isSavingTimetable, setIsSavingTimetable] = useState(false);
   const [solutionIndex, setSolutionIndex] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
   const solveCancellation = useRef<AbortController | null>(null);
   const exportCancellation = useRef<AbortController | null>(null);
+  const saveCancellation = useRef<AbortController | null>(null);
   const workbookCancellation = useRef<AbortController | null>(null);
   const validationRequest = useRef(0);
   const stageHeading = useRef<HTMLHeadingElement | null>(null);
@@ -82,7 +89,7 @@ function App() {
   const assignments = useMemo(() => selectedAssignments(rows), [rows]);
   const hasIncompleteRows = hasIncompleteSelections(rows);
   const fatalWarningCount = workbook?.parse_summary.fatal_warning_count ?? 0;
-  const maxStep = getMaxStep(Boolean(workbook), assignments.length, hasIncompleteRows, fatalWarningCount);
+  const maxStep = getMaxStep(Boolean(workbook), Boolean(loadedDocument), assignments.length, hasIncompleteRows, fatalWarningCount);
   const clampedCurrentStep = currentStep > maxStep ? maxStep : currentStep;
 
   useEffect(() => {
@@ -142,11 +149,15 @@ function App() {
     solveCancellation.current = null;
     exportCancellation.current?.abort();
     exportCancellation.current = null;
+    saveCancellation.current?.abort();
+    saveCancellation.current = null;
     setIsExportingUnsat(false);
+    setIsSavingTimetable(false);
     setFile(nextFile);
     setWorkbook(null);
     setRows([blankSelection()]);
     setSolveResponse(null);
+    setLoadedDocument(null);
     setSolutionIndex(0);
     setSolveState("idle");
     setElapsedMs(0);
@@ -209,6 +220,8 @@ function App() {
       return;
     }
 
+    const selectedFile = file;
+
     workbookCancellation.current?.abort();
     const cancellation = new AbortController();
     workbookCancellation.current = cancellation;
@@ -218,7 +231,47 @@ function App() {
     setStatus({ tone: "busy", title: COPY.upload.loadingTitle, detail: COPY.upload.loadingDetail });
 
     try {
-      const response = await validateWorkbook(file, cancellation.signal);
+      if (isTimetableJsonFile(selectedFile)) {
+        setStatus({ tone: "busy", title: COPY.upload.loadingTitle, detail: COPY.upload.jsonLoadingDetail });
+        if (selectedFile.size > MAX_TIMETABLE_DOCUMENT_BYTES) {
+          setStatus({ tone: "error", title: COPY.upload.errorTitle, detail: COPY.upload.jsonTooLargeDetail });
+          return;
+        }
+
+        const parsed = parseTimetableDocument(await selectedFile.text());
+        if (validationRequest.current !== requestId || cancellation.signal.aborted) {
+          return;
+        }
+        if (!parsed.ok) {
+          setStatus({
+            tone: "error",
+            title: COPY.upload.errorTitle,
+            detail: timetableDocumentErrorDetail(parsed.code),
+          });
+          return;
+        }
+
+        setWorkbook(null);
+        setRows([blankSelection()]);
+        setSolveResponse(parsed.document.timetable);
+        setLoadedDocument({
+          file_name: selectedFile.name,
+          saved_at_utc: parsed.document.saved_at_utc,
+          app_version: parsed.document.app_version,
+        });
+        setSolveState("done");
+        setSolutionIndex(0);
+        setElapsedMs(0);
+        setCurrentStep(3);
+        setStatus({
+          tone: "success",
+          title: COPY.upload.jsonSuccessTitle,
+          detail: COPY.upload.jsonSuccessDetail(selectedFile.name),
+        });
+        return;
+      }
+
+      const response = await validateWorkbook(selectedFile, cancellation.signal);
       if (validationRequest.current !== requestId || cancellation.signal.aborted) {
         return;
       }
@@ -326,7 +379,10 @@ function App() {
     solveCancellation.current = null;
     exportCancellation.current?.abort();
     exportCancellation.current = null;
+    saveCancellation.current?.abort();
+    saveCancellation.current = null;
     setIsExportingUnsat(false);
+    setIsSavingTimetable(false);
     setSolveResponse(null);
     setSolutionIndex(0);
     setSolveState("idle");
@@ -484,6 +540,56 @@ function App() {
     }
   }
 
+  async function saveTimetable() {
+    const response = solveResponse;
+    if (!response || response.solver.satisfiability !== "SAT" || response.solutions.length === 0 || !isDesktopApp()) {
+      return;
+    }
+
+    saveCancellation.current?.abort();
+    const cancellation = new AbortController();
+    saveCancellation.current = cancellation;
+    setIsSavingTimetable(true);
+    try {
+      const sourceFileName = loadedDocument?.file_name ?? file?.name ?? response.workbook_path;
+      const result = await saveTimetableDocument(response, sourceFileName, cancellation.signal);
+      if (saveCancellation.current !== cancellation) {
+        return;
+      }
+      if (!result.saved || !result.file_name) {
+        setStatus({
+          tone: "idle",
+          title: COPY.results.saveCancelled,
+          detail: COPY.results.saveCancelled,
+        });
+        return;
+      }
+
+      setStatus({
+        tone: "success",
+        title: COPY.results.savedTimetableTitle,
+        detail: COPY.results.savedTimetableDetail(result.file_name),
+      });
+    } catch (error) {
+      if (saveCancellation.current !== cancellation) {
+        return;
+      }
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      setStatus({
+        tone: "error",
+        title: COPY.results.saveErrorTitle,
+        detail: userFacingError(error, COPY.results.saveErrorDetail),
+      });
+    } finally {
+      if (saveCancellation.current === cancellation) {
+        saveCancellation.current = null;
+        setIsSavingTimetable(false);
+      }
+    }
+  }
+
   function changeTheme(preference: ThemePreference) {
     saveThemePreference(preference);
     setThemePreference(preference);
@@ -534,6 +640,19 @@ function App() {
           />
         ) : null}
 
+        {clampedCurrentStep === 2 && loadedDocument && !workbook ? (
+          <section className="card primary-card solo-card" aria-labelledby="loaded-selection-heading">
+            <p className="section-kicker">{COPY.steps.selection}</p>
+            <h2 id="loaded-selection-heading" ref={stageHeading} tabIndex={-1}>{COPY.results.loadedSelectionTitle}</h2>
+            <p className="section-copy">{COPY.results.loadedSelectionDetail}</p>
+            <div className="action-row">
+              <button className="button primary" type="button" onClick={() => setCurrentStep(3)}>
+                {COPY.results.loadedSelectionButton}
+              </button>
+            </div>
+          </section>
+        ) : null}
+
         {clampedCurrentStep === 3 && workbook && solveState !== "busy" && !solveResponse ? (
           <SolvePanel
             rows={rows}
@@ -559,6 +678,9 @@ function App() {
             onCancel={cancelSolve}
             onExportUnsat={exportFormalUnsat}
             isExportingUnsat={isExportingUnsat}
+            onSaveTimetable={saveTimetable}
+            isSavingTimetable={isSavingTimetable}
+            isLoadedDocument={Boolean(loadedDocument)}
             onBackToSelection={returnToSelection}
             onReset={() => resetWorkbookState(null)}
             headingRef={stageHeading}
@@ -571,10 +693,14 @@ function App() {
 
 function getMaxStep(
   hasWorkbook: boolean,
+  hasLoadedDocument: boolean,
   assignmentCount: number,
   hasIncompleteRows: boolean,
   fatalWarningCount: number,
 ): StepId {
+  if (hasLoadedDocument) {
+    return 3;
+  }
   if (!hasWorkbook) {
     return 1;
   }
@@ -582,6 +708,24 @@ function getMaxStep(
     return 2;
   }
   return 3;
+}
+
+function timetableDocumentErrorDetail(
+  code: "invalid-json" | "invalid-envelope" | "unsupported-version" | "newer-version" | "invalid-timetable" | "not-sat",
+): string {
+  switch (code) {
+    case "invalid-json":
+      return "File không phải là JSON hợp lệ.";
+    case "newer-version":
+      return COPY.upload.jsonNewerDetail;
+    case "unsupported-version":
+      return COPY.upload.jsonVersionDetail;
+    case "not-sat":
+      return COPY.upload.jsonNotSatDetail;
+    case "invalid-envelope":
+    case "invalid-timetable":
+      return COPY.upload.jsonInvalidDetail;
+  }
 }
 
 function resultStatus(response: RescheduleResponse): AppStatus {

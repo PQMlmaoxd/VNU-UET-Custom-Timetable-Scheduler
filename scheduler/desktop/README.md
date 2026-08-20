@@ -52,6 +52,10 @@ solutions returned by SAT; it does not claim global movement optimality.
   supported PDF upload, writes a per-command temporary file, imports it off the UI thread,
   validates the fixed schedule, then returns the current React `ValidateExistingResponse`
   shape without a local server.
+- `save_timetable` writes only SAT results with at least one solution to a versioned JSON
+  document through the native Save dialog. Loading that document is a frontend-only path
+  that opens the results view directly; XLSX and PDF files retain the validation,
+  course-selection, and solve flow.
 - `solve_workbook` is implemented through `PersonalSelectionService`; it materializes
   and independently validates every model before mapping the current `RescheduleResponse`
   shape. Its default adapter requires a packaged `SolverWorker.exe` beside the desktop

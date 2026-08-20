@@ -125,6 +125,111 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveTimetableWritesVersionedSatDocumentAtomically()
+    {
+        var destination = Path.Combine(temporaryDirectory, "saved-timetable.json");
+        string? suggestedFileName = null;
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: suggested =>
+            {
+                suggestedFileName = suggested;
+                return destination;
+            });
+        var solveResult = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+
+        var result = await dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new
+            {
+                timetable = solveResult,
+                source_file_name = @"C:\Downloads\source.xlsx",
+            }),
+            CancellationToken.None);
+
+        Assert.True(result.GetProperty("saved").GetBoolean());
+        Assert.Equal("saved-timetable.json", result.GetProperty("file_name").GetString());
+        Assert.NotNull(suggestedFileName);
+        Assert.StartsWith("TKB-", suggestedFileName, StringComparison.Ordinal);
+        Assert.EndsWith(".json", suggestedFileName, StringComparison.Ordinal);
+
+        using var document = JsonDocument.Parse(await File.ReadAllTextAsync(destination));
+        var root = document.RootElement;
+        Assert.Equal("vnu-uet-timetable", root.GetProperty("schema").GetString());
+        Assert.Equal(1, root.GetProperty("schema_version").GetInt32());
+        Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("saved_at_utc").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("app_version").GetString()));
+        Assert.Equal("source.xlsx", root.GetProperty("source").GetProperty("file_name").GetString());
+        Assert.Equal("reschedule", root.GetProperty("timetable").GetProperty("mode").GetString());
+        Assert.Equal(
+            solveResult.GetProperty("solutions").GetArrayLength(),
+            root.GetProperty("timetable").GetProperty("solutions").GetArrayLength());
+        Assert.DoesNotContain("\uFEFF", await File.ReadAllTextAsync(destination), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SaveTimetableReturnsCancellationWithoutCreatingAFile()
+    {
+        var destination = Path.Combine(temporaryDirectory, "cancelled.json");
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => null);
+        var solveResult = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+
+        var result = await dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable = solveResult, source_file_name = "source.xlsx" }),
+            CancellationToken.None);
+
+        Assert.False(result.GetProperty("saved").GetBoolean());
+        Assert.Null(result.GetProperty("file_name").GetString());
+        Assert.False(File.Exists(destination));
+    }
+
+    [Theory]
+    [InlineData("UNSAT", 0)]
+    [InlineData("UNKNOWN", 0)]
+    public async Task SaveTimetableRejectsNonSatResults(string satisfiability, int solutionCount)
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var invalidTimetable = new
+        {
+            mode = "reschedule",
+            department = "CNTT",
+            solver = new { satisfiability, solution_count = solutionCount },
+            solutions = Array.Empty<object>(),
+        };
+
+        var exception = await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable = invalidTimetable }),
+            CancellationToken.None));
+
+        Assert.Contains("lưu", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SaveTimetableRejectsMissingTimetablePayload()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { source_file_name = "source.xlsx" }),
+            CancellationToken.None));
+    }
+
+    [Fact]
     public async Task SolveWorkbookRejectsFatalScheduleGapBeforeStartingSolver()
     {
         var workbookPath = CreateWorkbook(includeRoom: false, includeValidSession: true);
@@ -315,6 +420,25 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
     }
 
     public void Dispose() => Directory.Delete(temporaryDirectory, true);
+
+    private static JsonElement CreateSolvePayload(string workbookPath) => JsonSerializer.SerializeToElement(new
+    {
+        workbook = new
+        {
+            file_name = "fixture.xlsx",
+            bytes_base64 = Convert.ToBase64String(File.ReadAllBytes(workbookPath)),
+        },
+        desired_assignments = new[]
+        {
+            new
+            {
+                course_code = "INT1000",
+                course_name = "Programming",
+                teaching_team_label = "Alice",
+            },
+        },
+        timeout_seconds = 30,
+    });
 
     private string CreateWorkbook(
         bool includeRoom = true,

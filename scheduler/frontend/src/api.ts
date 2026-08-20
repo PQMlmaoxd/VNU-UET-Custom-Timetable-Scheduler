@@ -1,4 +1,9 @@
-import type { DesiredAssignmentPayload, RescheduleResponse, ValidateExistingResponse } from "./types";
+import type {
+  DesiredAssignmentPayload,
+  RescheduleResponse,
+  SaveTimetableResponse,
+  ValidateExistingResponse,
+} from "./types";
 import type { ThemePreference } from "./theme";
 
 type DesktopWebView = {
@@ -233,6 +238,21 @@ export async function exportUnsatArtifact(
   }, signal, isUnsatArtifactExportResponse);
 }
 
+export async function saveTimetable(
+  timetable: RescheduleResponse,
+  sourceFileName: string,
+  signal?: AbortSignal,
+): Promise<SaveTimetableResponse> {
+  if (!getDesktopWebView()) {
+    throw new Error("Lưu thời khóa biểu JSON chỉ khả dụng trong ứng dụng Desktop.");
+  }
+
+  return postDesktop<SaveTimetableResponse>("save_timetable", {
+    timetable,
+    source_file_name: sourceFileName,
+  }, signal, isSaveTimetableResponse);
+}
+
 function isDesktopBridgeResponse(value: Record<string, unknown>): value is DesktopBridgeResponse {
   return typeof value.protocol_version === "number"
     && typeof value.id === "string"
@@ -273,7 +293,7 @@ function isBaseTimetableResponse(value: unknown): value is Record<string, unknow
     && isValidationSummary(value.existing_schedule_validation);
 }
 
-function isRescheduleResponse(value: unknown): value is RescheduleResponse {
+export function isRescheduleResponse(value: unknown): value is RescheduleResponse {
   if (!isBaseTimetableResponse(value)) {
     return false;
   }
@@ -302,6 +322,12 @@ function isRescheduleResponse(value: unknown): value is RescheduleResponse {
 
 function isUnsatArtifactExportResponse(value: unknown): value is UnsatArtifactExportResponse {
   return isRecord(value) && typeof value.exported === "boolean";
+}
+
+function isSaveTimetableResponse(value: unknown): value is SaveTimetableResponse {
+  return isRecord(value)
+    && typeof value.saved === "boolean"
+    && (value.file_name === null || typeof value.file_name === "string");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

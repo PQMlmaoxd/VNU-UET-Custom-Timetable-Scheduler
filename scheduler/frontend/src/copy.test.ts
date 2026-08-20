@@ -5,8 +5,8 @@ import { COPY, userFacingError, userFacingNote } from "./copy";
 describe("user-facing copy", () => {
   it("describes the current file capability without claiming PDF support", () => {
     expect(COPY.upload.inputLabel).toBe("Chọn hoặc thả thời khóa biểu");
-    expect(COPY.upload.supportedFormats(false)).toBe("Hỗ trợ XLSX · PDF sẽ bổ sung");
-    expect(COPY.upload.supportedFormats(true)).toBe("Hỗ trợ XLSX và PDF");
+    expect(COPY.upload.supportedFormats(false)).toBe("Hỗ trợ XLSX và JSON");
+    expect(COPY.upload.supportedFormats(true)).toBe("Hỗ trợ XLSX, PDF và JSON");
   });
 
   it("hides technical error details behind an actionable message", () => {

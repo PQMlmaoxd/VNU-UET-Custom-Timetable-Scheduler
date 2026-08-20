@@ -135,6 +135,17 @@ the complete CakeML/HOL4 provenance tree. The application ZIP itself retains
 `release-manifest.json`, `sbom.cdx.json` and `THIRD_PARTY_NOTICES.md` from the
 publish directory.
 
+## Saved Timetables
+
+The results view can save a SAT timetable with at least one solution as a versioned
+`.json` document. In the Windows desktop application, **Lưu thời khóa biểu (.json)**
+opens the native Save dialog and suggests `TKB-<department>-<yyyyMMdd-HHmm>.json`.
+The document contains the complete renderable result, not the source workbook or
+PDF. Loading it skips validation and course selection and opens the results view
+directly. Loading XLSX or PDF continues to use the normal validation, selection,
+and solve workflow. JSON loading is frontend-only and therefore also works in the
+browser development build; saving requires the desktop bridge.
+
 ## Manual Acceptance For An Official Installer
 
 CI cannot replace these release-owner checks when publishing a production-labelled
