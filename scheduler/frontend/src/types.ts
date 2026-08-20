@@ -141,6 +141,7 @@ export type TimetableDocument = {
 
 export type LoadedTimetableDocument = {
   file_name: string;
+  source_file_name: string;
   saved_at_utc: string;
   app_version: string;
 };

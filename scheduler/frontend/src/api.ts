@@ -86,7 +86,7 @@ async function postDesktop<T>(
   payload: unknown,
   signal?: AbortSignal,
   validateResult?: ResultValidator<T>,
-  timeoutMilliseconds = DEFAULT_COMMAND_TIMEOUT_MS,
+  timeoutMilliseconds: number | null = DEFAULT_COMMAND_TIMEOUT_MS,
 ): Promise<T> {
   const webView = getDesktopWebView();
   if (!webView) {
@@ -102,7 +102,9 @@ async function postDesktop<T>(
     let settled = false;
 
     function cleanup() {
-      window.clearTimeout(timeout);
+      if (timeout !== null) {
+        window.clearTimeout(timeout);
+      }
       desktopWebView.removeEventListener("message", onMessage);
       signal?.removeEventListener("abort", onAbort);
     }
@@ -120,12 +122,14 @@ async function postDesktop<T>(
       });
     }
 
-    const timeout = window.setTimeout(() => {
-      cleanup();
-      sendCancellation();
-      settled = true;
-      reject(new Error("Desktop bridge timed out."));
-    }, timeoutMilliseconds);
+    const timeout = timeoutMilliseconds === null
+      ? null
+      : window.setTimeout(() => {
+          cleanup();
+          sendCancellation();
+          settled = true;
+          reject(new Error("Desktop bridge timed out."));
+        }, timeoutMilliseconds);
 
     function onMessage(event: MessageEvent<unknown>) {
       const message = parseDesktopBridgeMessage(event.data);
@@ -250,7 +254,7 @@ export async function saveTimetable(
   return postDesktop<SaveTimetableResponse>("save_timetable", {
     timetable,
     source_file_name: sourceFileName,
-  }, signal, isSaveTimetableResponse);
+  }, signal, isSaveTimetableResponse, null);
 }
 
 function isDesktopBridgeResponse(value: Record<string, unknown>): value is DesktopBridgeResponse {

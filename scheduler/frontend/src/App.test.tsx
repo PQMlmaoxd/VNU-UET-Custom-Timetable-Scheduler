@@ -322,7 +322,7 @@ describe("App", () => {
       payload: { source_file_name: string };
     };
     expect(request.method).toBe("save_timetable");
-    expect(request.payload.source_file_name).toBe("saved-timetable.json");
+    expect(request.payload.source_file_name).toBe("timetable.xlsx");
   });
 
   it("does not show the desktop save action in browser mode", async () => {

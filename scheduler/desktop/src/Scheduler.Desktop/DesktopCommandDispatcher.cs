@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.IO.Compression;
 using System.IO;
 using System.Security.Cryptography;
@@ -307,6 +308,11 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         }
 
         var fullPath = Path.GetFullPath(outputPath);
+        if (!string.Equals(Path.GetExtension(fullPath), ".json", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new DesktopBridgeException("Hãy chọn tệp có phần mở rộng .json để lưu thời khóa biểu.");
+        }
+
         var outputDirectory = Path.GetDirectoryName(fullPath)
             ?? throw new DesktopBridgeException("Không thể xác định thư mục lưu thời khóa biểu.");
         Directory.CreateDirectory(outputDirectory);
@@ -452,6 +458,39 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         {
             throw new DesktopBridgeException("Danh sách phương án thời khóa biểu không hợp lệ.");
         }
+
+        DesktopResponseMapper.RescheduleResponse? response;
+        try
+        {
+            response = JsonSerializer.Deserialize<DesktopResponseMapper.RescheduleResponse>(
+                timetable.GetRawText(),
+                SerializerOptions);
+        }
+        catch (Exception exception) when (exception is JsonException or NotSupportedException)
+        {
+            throw new DesktopBridgeException("Kết quả thời khóa biểu có cấu trúc không hợp lệ.");
+        }
+
+        if (response is null ||
+            response.Mode != "reschedule" ||
+            string.IsNullOrWhiteSpace(response.WorkbookPath) ||
+            string.IsNullOrWhiteSpace(response.Department) ||
+            response.ParseSummary is null ||
+            response.PrototypeCatalog is null ||
+            response.ExistingScheduleValidation is null ||
+            response.Solver is null ||
+            response.Solutions.IsDefaultOrEmpty ||
+            response.Solver.Satisfiability != "SAT" ||
+            response.Solver.SolutionCount != response.Solutions.Length ||
+            response.Solutions
+                .Select((solution, index) => (solution, index))
+                .Any(item =>
+                    item.solution is null ||
+                    item.solution.SolutionIndex != item.index + 1 ||
+                    item.solution.DesiredAssignments.IsDefault))
+        {
+            throw new DesktopBridgeException("Kết quả thời khóa biểu có cấu trúc không hợp lệ.");
+        }
     }
 
     private static string GetRequiredString(JsonElement element, string propertyName)
@@ -491,7 +530,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
             safeDepartment = "unknown";
         }
 
-        return $"TKB-{safeDepartment}-{now:yyyyMMdd-HHmm}.json";
+        return $"TKB-{safeDepartment}-{now.ToString("yyyyMMdd-HHmm", CultureInfo.InvariantCulture)}.json";
     }
 
     private static void ValidateDesiredAssignments(ImmutableArray<DesiredAssignmentPayload> assignments)

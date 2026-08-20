@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using System.IO.Compression;
 using System.Text.Json;
 using DocumentFormat.OpenXml;
@@ -190,6 +191,81 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
         Assert.False(result.GetProperty("saved").GetBoolean());
         Assert.Null(result.GetProperty("file_name").GetString());
         Assert.False(File.Exists(destination));
+    }
+
+    [Fact]
+    public async Task SaveTimetableRejectsNonJsonDestination()
+    {
+        var destination = Path.Combine(temporaryDirectory, "saved-timetable.txt");
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => destination);
+        var solveResult = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable = solveResult }),
+            CancellationToken.None));
+
+        Assert.False(File.Exists(destination));
+    }
+
+    [Fact]
+    public async Task SaveTimetableUsesInvariantGregorianFilenameDigits()
+    {
+        var destination = Path.Combine(temporaryDirectory, "culture.json");
+        string? suggestedFileName = null;
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: suggested =>
+            {
+                suggestedFileName = suggested;
+                return destination;
+            });
+        var solveResult = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("th-TH");
+            await dispatcher.DispatchAsync(
+                "save_timetable",
+                JsonSerializer.SerializeToElement(new { timetable = solveResult }),
+                CancellationToken.None);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+
+        Assert.NotNull(suggestedFileName);
+        Assert.Matches("^TKB-.+-[0-9]{8}-[0-9]{4}\\.json$", suggestedFileName);
+    }
+
+    [Fact]
+    public async Task SaveTimetableRejectsMalformedSolutionEntries()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var invalidTimetable = new
+        {
+            mode = "reschedule",
+            workbook_path = "fixture.xlsx",
+            department = "CNTT",
+            solver = new { satisfiability = "SAT", solution_count = 1 },
+            solutions = new[] { new { } },
+        };
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable = invalidTimetable }),
+            CancellationToken.None));
     }
 
     [Theory]

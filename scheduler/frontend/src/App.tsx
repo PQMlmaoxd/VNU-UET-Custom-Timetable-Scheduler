@@ -256,6 +256,7 @@ function App() {
         setSolveResponse(parsed.document.timetable);
         setLoadedDocument({
           file_name: selectedFile.name,
+          source_file_name: parsed.document.source.file_name,
           saved_at_utc: parsed.document.saved_at_utc,
           app_version: parsed.document.app_version,
         });
@@ -551,7 +552,7 @@ function App() {
     saveCancellation.current = cancellation;
     setIsSavingTimetable(true);
     try {
-      const sourceFileName = loadedDocument?.file_name ?? file?.name ?? response.workbook_path;
+      const sourceFileName = loadedDocument?.source_file_name ?? file?.name ?? response.workbook_path;
       const result = await saveTimetableDocument(response, sourceFileName, cancellation.signal);
       if (saveCancellation.current !== cancellation) {
         return;

@@ -269,7 +269,7 @@ test("saves a loaded SAT timetable through the desktop bridge", async ({ page })
     };
     return bridgeWindow.__schedulerBridgeRequests?.find(request => request.method === "save_timetable");
   });
-  expect(saveRequest?.payload?.source_file_name).toBe("saved-timetable.json");
+  expect(saveRequest?.payload?.source_file_name).toBe("timetable.xlsx");
 });
 
 test("persists dark theme and keeps the laptop workspace bounded", async ({ page }, testInfo) => {
