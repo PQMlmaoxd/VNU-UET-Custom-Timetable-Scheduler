@@ -286,6 +286,58 @@ describe("saved timetable documents", () => {
     }
   });
 
+  it("rejects atomic periods that do not match the period code", () => {
+    const invalidSession = { ...session, period_code: "1-2", period_atomic: ["1", "3"] };
+    const invalidDesiredAssignment = {
+      ...desiredAssignment,
+      matched_sessions: [invalidSession],
+      lhp_schedules: [{
+        ...desiredAssignment.lhp_schedules[0],
+        matched_sessions: [invalidSession],
+      }],
+    };
+    const invalidTimetable = {
+      ...timetable,
+      desired_assignments: [invalidDesiredAssignment],
+      solutions: [{ ...timetable.solutions[0], desired_assignments: [invalidDesiredAssignment] }],
+    };
+
+    expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+      ok: false,
+      code: "invalid-timetable",
+    });
+  });
+
+  it("rejects negative movement costs", () => {
+    const invalidTimetable = {
+      ...timetable,
+      solutions: [{ ...timetable.solutions[0], movement_cost: -1 }],
+    };
+
+    expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+      ok: false,
+      code: "invalid-timetable",
+    });
+  });
+
+  it("requires every solution to preserve the requested desired assignments", () => {
+    const secondSolution = {
+      ...timetable.solutions[0],
+      solution_index: 2,
+      desired_assignments: [{ ...desiredAssignment, course_name: "Khác" }],
+    };
+    const invalidTimetable = {
+      ...timetable,
+      solver: { ...timetable.solver, solution_count: 2 },
+      solutions: [timetable.solutions[0], secondSolution],
+    };
+
+    expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+      ok: false,
+      code: "invalid-timetable",
+    });
+  });
+
   it("rejects desired assignments whose session count disagrees with rendered sessions", () => {
     const invalidDesiredAssignment = { ...desiredAssignment, session_count: 2 };
     const invalidTimetable = {

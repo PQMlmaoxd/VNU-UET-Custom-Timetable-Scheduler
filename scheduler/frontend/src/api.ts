@@ -32,6 +32,17 @@ const SOLVE_OVERHEAD_TIMEOUT_MS = 60_000;
 const VALID_SESSION_TYPES = new Set(["LT", "TH", "LT+TH", "TL+TH", "BT", "LT+BT", "ONL"]);
 const VALID_PERIOD_CODES = new Set(["1", "2", "3", "4", "1-2", "2-3", "3-4", "Sáng", "Chiều"]);
 const VALID_ATOMIC_PERIODS = new Set(["1", "2", "3", "4"]);
+const EXPECTED_PERIOD_ATOMICS = new Map<string, readonly string[]>([
+  ["1", ["1"]],
+  ["2", ["2"]],
+  ["3", ["3"]],
+  ["4", ["4"]],
+  ["1-2", ["1", "2"]],
+  ["2-3", ["2", "3"]],
+  ["3-4", ["3", "4"]],
+  ["Sáng", ["1", "2"]],
+  ["Chiều", ["3", "4"]],
+]);
 
 type ResultValidator<T> = (value: unknown) => value is T;
 
@@ -361,7 +372,7 @@ export function isRescheduleResponse(value: unknown): value is RescheduleRespons
     && (solver.satisfiability !== "SAT" || response.desired_assignments.length > 0)
     && (solver.satisfiability !== "SAT" || solutions.length > 0)
     && (solver.satisfiability !== "UNSAT" || solutions.length === 0)
-    && hasRootAssignmentsMatchingFirstSolution(
+    && hasRootAssignmentsMatchingEverySolution(
       response.desired_assignments as DesiredAnchorSummary[],
       solutions as RescheduleResponse["solutions"],
     )
@@ -525,22 +536,22 @@ function isSessionScheduleItem(value: unknown): boolean {
       "period_atomic",
     ])
     && typeof value.course_code === "string"
-     && typeof value.course_name === "string"
-     && typeof value.lhp_code === "string"
-     && typeof value.session_type === "string"
-     && VALID_SESSION_TYPES.has(value.session_type)
-     && typeof value.timeslot_label === "string"
-     && typeof value.room_code === "string"
+    && typeof value.course_name === "string"
+    && typeof value.lhp_code === "string"
+    && typeof value.session_type === "string"
+    && VALID_SESSION_TYPES.has(value.session_type)
+    && typeof value.timeslot_label === "string"
+    && typeof value.room_code === "string"
     && isNonEmptyString(value.course_code)
     && isNonEmptyString(value.lhp_code)
     && isNonEmptyString(value.session_id)
     && isStringArray(value.lecturer_names)
     && isStringArray(value.cohort_codes)
-     && isInteger(value.source_row)
-     && (value.day === null || isInteger(value.day))
-     && (value.period_code === null || typeof value.period_code === "string")
-     && (value.period_atomic === null || isStringArray(value.period_atomic))
-     && isValidSessionTiming(value);
+    && isInteger(value.source_row)
+    && (value.day === null || isInteger(value.day))
+    && (value.period_code === null || typeof value.period_code === "string")
+    && (value.period_atomic === null || isStringArray(value.period_atomic))
+    && isValidSessionTiming(value);
 }
 
 function isValidSessionTiming(value: Record<string, unknown>): boolean {
@@ -549,15 +560,22 @@ function isValidSessionTiming(value: Record<string, unknown>): boolean {
     return true;
   }
 
-  return isInteger(day)
-    && day >= 2
-    && day <= 7
-    && typeof periodCode === "string"
-    && VALID_PERIOD_CODES.has(periodCode)
-    && isStringArray(periodAtomic)
-    && periodAtomic.length > 0
-    && new Set(periodAtomic).size === periodAtomic.length
-    && periodAtomic.every((period) => VALID_ATOMIC_PERIODS.has(period));
+  if (!isInteger(day)
+    || day < 2
+    || day > 7
+    || typeof periodCode !== "string"
+    || !VALID_PERIOD_CODES.has(periodCode)
+    || !isStringArray(periodAtomic)
+    || periodAtomic.length === 0
+    || new Set(periodAtomic).size !== periodAtomic.length
+    || !periodAtomic.every((period) => VALID_ATOMIC_PERIODS.has(period))) {
+    return false;
+  }
+
+  const expectedAtomicPeriods = EXPECTED_PERIOD_ATOMICS.get(periodCode);
+  return expectedAtomicPeriods !== undefined
+    && periodAtomic.length === expectedAtomicPeriods.length
+    && periodAtomic.every((period, index) => period === expectedAtomicPeriods[index]);
 }
 
 function isDesiredAssignmentSummary(value: unknown): boolean {
@@ -659,7 +677,7 @@ function sessionSemanticKey(session: SessionScheduleItem): string {
   ]);
 }
 
-function hasRootAssignmentsMatchingFirstSolution(
+function hasRootAssignmentsMatchingEverySolution(
   rootAssignments: DesiredAnchorSummary[],
   solutions: RescheduleResponse["solutions"],
 ): boolean {
@@ -667,7 +685,8 @@ function hasRootAssignmentsMatchingFirstSolution(
     return rootAssignments.length === 0;
   }
 
-  return areEquivalentDesiredAssignments(rootAssignments, solutions[0].desired_assignments);
+  return solutions.every((solution) =>
+    areEquivalentDesiredAssignments(rootAssignments, solution.desired_assignments));
 }
 
 function areEquivalentDesiredAssignments(
@@ -709,7 +728,7 @@ function isSelectedSolution(value: unknown): boolean {
   return isRecord(value)
     && hasOnlyKeys(value, ["solution_index", "movement_cost", "desired_assignments"])
     && isInteger(value.solution_index)
-    && isInteger(value.movement_cost)
+    && isNonNegativeInteger(value.movement_cost)
     && Array.isArray(value.desired_assignments)
     && value.desired_assignments.length > 0
     && value.desired_assignments.every(isDesiredAssignmentSummary)

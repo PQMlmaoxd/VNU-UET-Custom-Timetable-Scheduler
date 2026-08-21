@@ -32,6 +32,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
     private const int MaxTimetableSolutions = 5;
     private const int MaxDesiredAssignments = 100;
     private const int MaxAssignmentFieldCharacters = 512;
+    private const int MaxDepartmentFileNameCharacters = 200;
     private static readonly FrozenSet<string> ValidSessionTypes = new[]
     {
         "LT", "TH", "LT+TH", "TL+TH", "BT", "LT+BT", "ONL",
@@ -529,10 +530,11 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         IsCompleteSolverSummary(response.Solver) &&
         response.Solutions.All(solution =>
             solution is not null &&
+            solution.MovementCost >= 0 &&
             !solution.DesiredAssignments.IsDefaultOrEmpty &&
             solution.DesiredAssignments.All(IsCompleteDesiredAnchor) &&
             HasUniqueRenderedSessionIds(solution.DesiredAssignments)) &&
-        HasRootAssignmentsMatchingFirstSolution(response) &&
+        HasRootAssignmentsMatchingEverySolution(response) &&
         (response.SolvedScheduleValidation is null ||
          IsCompleteValidationSummary(response.SolvedScheduleValidation));
 
@@ -698,8 +700,30 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         return !atomicPeriods.IsDefault &&
                !atomicPeriods.IsEmpty &&
                atomicPeriods.Distinct(StringComparer.Ordinal).Count() == atomicPeriods.Length &&
-               atomicPeriods.All(ValidAtomicPeriods.Contains);
+               atomicPeriods.All(ValidAtomicPeriods.Contains) &&
+               HasExpectedAtomicPeriods(session.PeriodCode, atomicPeriods);
     }
+
+    private static bool HasExpectedAtomicPeriods(
+        string periodCode,
+        ImmutableArray<string> atomicPeriods) =>
+        periodCode switch
+        {
+            "1" => atomicPeriods.Length == 1 && atomicPeriods[0] == "1",
+            "2" => atomicPeriods.Length == 1 && atomicPeriods[0] == "2",
+            "3" => atomicPeriods.Length == 1 && atomicPeriods[0] == "3",
+            "4" => atomicPeriods.Length == 1 && atomicPeriods[0] == "4",
+            "1-2" or "Sáng" => atomicPeriods.Length == 2 &&
+                                 atomicPeriods[0] == "1" &&
+                                 atomicPeriods[1] == "2",
+            "2-3" => atomicPeriods.Length == 2 &&
+                      atomicPeriods[0] == "2" &&
+                      atomicPeriods[1] == "3",
+            "3-4" or "Chiều" => atomicPeriods.Length == 2 &&
+                                 atomicPeriods[0] == "3" &&
+                                 atomicPeriods[1] == "4",
+            _ => false,
+        };
 
     private static bool IsSemanticallyConsistentDesiredAnchor(
         DesktopResponseMapper.DesiredAnchorSummary anchor)
@@ -784,7 +808,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         return !left.HasValue || left.Value.SequenceEqual(right!.Value, StringComparer.Ordinal);
     }
 
-    private static bool HasRootAssignmentsMatchingFirstSolution(
+    private static bool HasRootAssignmentsMatchingEverySolution(
         DesktopResponseMapper.RescheduleResponse response)
     {
         if (response.Solutions.IsDefaultOrEmpty)
@@ -792,9 +816,9 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
             return response.DesiredAssignments.IsDefaultOrEmpty;
         }
 
-        return AreEquivalentDesiredAssignments(
-            response.DesiredAssignments,
-            response.Solutions[0].DesiredAssignments);
+        return response.Solutions.All(solution =>
+            solution is not null &&
+            AreEquivalentDesiredAssignments(response.DesiredAssignments, solution.DesiredAssignments));
     }
 
     private static bool AreEquivalentDesiredAssignments(
@@ -903,6 +927,10 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
                 : character)
             .ToArray())
             .Trim('-');
+        if (safeDepartment.Length > MaxDepartmentFileNameCharacters)
+        {
+            safeDepartment = safeDepartment[..MaxDepartmentFileNameCharacters].Trim('-');
+        }
         if (string.IsNullOrWhiteSpace(safeDepartment))
         {
             safeDepartment = "unknown";

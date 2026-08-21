@@ -297,6 +297,60 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveTimetableRejectsMismatchedAtomicPeriods()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        foreach (var desiredAssignments in new[]
+        {
+            timetable["desired_assignments"]!.AsArray(),
+            timetable["solutions"]!.AsArray()[0]!["desired_assignments"]!.AsArray(),
+        })
+        {
+            var desiredAssignment = desiredAssignments[0]!.AsObject();
+            foreach (var session in new[]
+            {
+                desiredAssignment["matched_sessions"]!.AsArray()[0]!.AsObject(),
+                desiredAssignment["lhp_schedules"]!.AsArray()[0]!["matched_sessions"]!.AsArray()[0]!.AsObject(),
+            })
+            {
+                session["period_code"] = "1-2";
+                session["period_atomic"] = new JsonArray(JsonValue.Create("1"), JsonValue.Create("3"));
+            }
+        }
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SaveTimetableRejectsNegativeMovementCost()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        timetable["solutions"]!.AsArray()[0]!["movement_cost"] = -1;
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None));
+    }
+
+    [Fact]
     public async Task SaveTimetableRejectsNonJsonDestination()
     {
         var destination = Path.Combine(temporaryDirectory, "saved-timetable.txt");
@@ -348,6 +402,35 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
 
         Assert.NotNull(suggestedFileName);
         Assert.Matches("^TKB-.+-[0-9]{8}-[0-9]{4}\\.json$", suggestedFileName);
+    }
+
+    [Fact]
+    public async Task SaveTimetableBoundsDepartmentInSuggestedFileName()
+    {
+        var destination = Path.Combine(temporaryDirectory, "long-department.json");
+        string? suggestedFileName = null;
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: suggested =>
+            {
+                suggestedFileName = suggested;
+                return destination;
+            });
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        timetable["department"] = new string('D', 1_000);
+
+        await dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None);
+
+        Assert.NotNull(suggestedFileName);
+        Assert.True(suggestedFileName!.Length <= 255);
+        Assert.StartsWith($"TKB-{new string('D', 200)}-", suggestedFileName, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -594,6 +677,30 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
             CancellationToken.None);
         var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
         timetable["desired_assignments"]!.AsArray()[0]!["course_name"] = "Khác";
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SaveTimetableRejectsLaterSolutionWithDifferentDesiredAssignments()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        var solutions = timetable["solutions"]!.AsArray();
+        var secondSolution = JsonNode.Parse(solutions[0]!.ToJsonString())!.AsObject();
+        secondSolution["solution_index"] = 2;
+        secondSolution["desired_assignments"]!.AsArray()[0]!["course_name"] = "Khác";
+        solutions.Add(secondSolution);
+        timetable["solver"]!.AsObject()["solution_count"] = 2;
 
         await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
             "save_timetable",
