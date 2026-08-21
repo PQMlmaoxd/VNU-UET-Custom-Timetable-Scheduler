@@ -288,6 +288,28 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         var department = GetRequiredString(command.Timetable, "department");
         var sourceFileName = NormalizeSourceFileName(command.SourceFileName);
         var defaultFileName = CreateTimetableFileName(department, DateTimeOffset.Now);
+
+        var response = JsonSerializer.Deserialize<DesktopResponseMapper.RescheduleResponse>(
+            command.Timetable.GetRawText(),
+            SerializerOptions)
+            ?? throw new DesktopBridgeException("Kết quả thời khóa biểu có cấu trúc không hợp lệ.");
+        response = response with
+        {
+            WorkbookPath = NormalizeSourceFileName(response.WorkbookPath),
+        };
+        var document = new DesktopResponseMapper.TimetableDocument(
+            "vnu-uet-timetable",
+            1,
+            DateTimeOffset.UtcNow,
+            DesktopReleaseMetadata.ApplicationVersion,
+            new DesktopResponseMapper.TimetableDocumentSource(sourceFileName),
+            DesktopResponseMapper.ToJson(response));
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(document, TimetableDocumentSerializerOptions);
+        if (bytes.Length > MaxTimetableDocumentBytes)
+        {
+            throw new DesktopBridgeException("Thời khóa biểu JSON vượt quá giới hạn 25 MB.");
+        }
+
         var outputPath = chooseTimetablePath(defaultFileName);
         if (string.IsNullOrWhiteSpace(outputPath))
         {
@@ -295,18 +317,6 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var document = new DesktopResponseMapper.TimetableDocument(
-            "vnu-uet-timetable",
-            1,
-            DateTimeOffset.UtcNow,
-            DesktopReleaseMetadata.ApplicationVersion,
-            new DesktopResponseMapper.TimetableDocumentSource(sourceFileName),
-            command.Timetable);
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(document, TimetableDocumentSerializerOptions);
-        if (bytes.Length > MaxTimetableDocumentBytes)
-        {
-            throw new DesktopBridgeException("Thời khóa biểu JSON vượt quá giới hạn 25 MB.");
-        }
 
         var fullPath = Path.GetFullPath(outputPath);
         if (!string.Equals(Path.GetExtension(fullPath), ".json", StringComparison.OrdinalIgnoreCase))
@@ -509,6 +519,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
             !solution.DesiredAssignments.IsDefaultOrEmpty &&
             solution.DesiredAssignments.All(IsCompleteDesiredAnchor) &&
             HasUniqueRenderedSessionIds(solution.DesiredAssignments)) &&
+        HasRootAssignmentsMatchingFirstSolution(response) &&
         (response.SolvedScheduleValidation is null ||
          IsCompleteValidationSummary(response.SolvedScheduleValidation));
 
@@ -618,28 +629,30 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
 
     private static bool IsCompleteDesiredAnchor(DesktopResponseMapper.DesiredAnchorSummary anchor) =>
         anchor is not null &&
-        anchor.CourseCode is not null &&
-        anchor.TeachingTeamKey is not null &&
-        anchor.TeachingTeamLabel is not null &&
-        anchor.CourseName is not null &&
+        !string.IsNullOrWhiteSpace(anchor.CourseCode) &&
+        !string.IsNullOrWhiteSpace(anchor.TeachingTeamKey) &&
+        !string.IsNullOrWhiteSpace(anchor.TeachingTeamLabel) &&
+        !string.IsNullOrWhiteSpace(anchor.CourseName) &&
         anchor.SessionCount >= 0 &&
         !anchor.LhpCodes.IsDefault &&
-        anchor.LhpCodes.All(code => code is not null) &&
+        anchor.LhpCodes.Length > 0 &&
+        anchor.LhpCodes.All(code => !string.IsNullOrWhiteSpace(code)) &&
         !anchor.MatchedSessions.IsDefaultOrEmpty &&
         !anchor.LhpSchedules.IsDefaultOrEmpty &&
         anchor.MatchedSessions.All(IsCompleteSession) &&
         anchor.LhpSchedules.All(schedule =>
             schedule is not null &&
-            schedule.LhpCode is not null &&
+            !string.IsNullOrWhiteSpace(schedule.LhpCode) &&
             !schedule.MatchedSessions.IsDefaultOrEmpty &&
-            schedule.MatchedSessions.All(IsCompleteSession));
+            schedule.MatchedSessions.All(IsCompleteSession)) &&
+        IsSemanticallyConsistentDesiredAnchor(anchor);
 
     private static bool IsCompleteSession(DesktopResponseMapper.SessionScheduleItem session) =>
         session is not null &&
         !string.IsNullOrWhiteSpace(session.SessionId) &&
-        session.CourseCode is not null &&
+        !string.IsNullOrWhiteSpace(session.CourseCode) &&
         session.CourseName is not null &&
-        session.LhpCode is not null &&
+        !string.IsNullOrWhiteSpace(session.LhpCode) &&
         session.SessionType is not null &&
         session.TimeslotLabel is not null &&
         session.RoomCode is not null &&
@@ -649,7 +662,128 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         session.CohortCodes.All(cohort => cohort is not null) &&
         (session.PeriodAtomic is null ||
          (!session.PeriodAtomic.Value.IsDefault &&
-          session.PeriodAtomic.Value.All(atomic => atomic is not null)));
+           session.PeriodAtomic.Value.All(atomic => atomic is not null)));
+
+    private static bool IsSemanticallyConsistentDesiredAnchor(
+        DesktopResponseMapper.DesiredAnchorSummary anchor)
+    {
+        var renderedSessions = anchor.LhpSchedules
+            .SelectMany(schedule => schedule.MatchedSessions)
+            .ToArray();
+        var scheduleCodes = anchor.LhpSchedules
+            .Select(schedule => schedule.LhpCode)
+            .ToArray();
+
+        return anchor.LhpCodes.Distinct(StringComparer.Ordinal).Count() == anchor.LhpCodes.Length &&
+               SameStringSet(anchor.LhpCodes, scheduleCodes) &&
+               anchor.SessionCount == anchor.MatchedSessions.Length &&
+               anchor.SessionCount == renderedSessions.Length &&
+               anchor.MatchedSessions.All(session => session.CourseCode == anchor.CourseCode) &&
+               anchor.LhpSchedules.All(schedule =>
+                   schedule.MatchedSessions.All(session =>
+                       session.CourseCode == anchor.CourseCode &&
+                       session.LhpCode == schedule.LhpCode)) &&
+               AreEquivalentSessionCollections(anchor.MatchedSessions, renderedSessions);
+    }
+
+    private static bool SameStringSet(
+        IEnumerable<string> left,
+        IEnumerable<string> right)
+    {
+        var leftValues = left.ToArray();
+        var rightValues = right.ToArray();
+        return leftValues.Length == rightValues.Length &&
+               leftValues.Distinct(StringComparer.Ordinal).Count() == leftValues.Length &&
+               rightValues.Distinct(StringComparer.Ordinal).Count() == rightValues.Length &&
+               leftValues.All(value => rightValues.Contains(value, StringComparer.Ordinal));
+    }
+
+    private static bool AreEquivalentSessionCollections(
+        IEnumerable<DesktopResponseMapper.SessionScheduleItem> left,
+        IEnumerable<DesktopResponseMapper.SessionScheduleItem> right)
+    {
+        var leftSessions = left.ToArray();
+        var rightSessions = right.ToArray();
+        if (leftSessions.Length != rightSessions.Length ||
+            leftSessions.Select(session => session.SessionId).Distinct(StringComparer.Ordinal).Count() != leftSessions.Length ||
+            rightSessions.Select(session => session.SessionId).Distinct(StringComparer.Ordinal).Count() != rightSessions.Length)
+        {
+            return false;
+        }
+
+        var rightById = rightSessions.ToDictionary(session => session.SessionId, StringComparer.Ordinal);
+        return leftSessions.All(session =>
+            rightById.TryGetValue(session.SessionId, out var counterpart) &&
+            AreEquivalentSessions(session, counterpart));
+    }
+
+    private static bool AreEquivalentSessions(
+        DesktopResponseMapper.SessionScheduleItem left,
+        DesktopResponseMapper.SessionScheduleItem right) =>
+        left.SessionId == right.SessionId &&
+        left.CourseCode == right.CourseCode &&
+        left.CourseName == right.CourseName &&
+        left.LhpCode == right.LhpCode &&
+        left.SessionType == right.SessionType &&
+        left.LecturerNames.SequenceEqual(right.LecturerNames, StringComparer.Ordinal) &&
+        left.CohortCodes.SequenceEqual(right.CohortCodes, StringComparer.Ordinal) &&
+        left.TimeslotLabel == right.TimeslotLabel &&
+        left.RoomCode == right.RoomCode &&
+        left.SourceRow == right.SourceRow &&
+        left.Day == right.Day &&
+        left.PeriodCode == right.PeriodCode &&
+        AreEquivalentOptionalArrays(left.PeriodAtomic, right.PeriodAtomic);
+
+    private static bool AreEquivalentOptionalArrays(
+        ImmutableArray<string>? left,
+        ImmutableArray<string>? right)
+    {
+        if (left.HasValue != right.HasValue)
+        {
+            return false;
+        }
+
+        return !left.HasValue || left.Value.SequenceEqual(right!.Value, StringComparer.Ordinal);
+    }
+
+    private static bool HasRootAssignmentsMatchingFirstSolution(
+        DesktopResponseMapper.RescheduleResponse response)
+    {
+        if (response.Solutions.IsDefaultOrEmpty)
+        {
+            return response.DesiredAssignments.IsDefaultOrEmpty;
+        }
+
+        return AreEquivalentDesiredAssignments(
+            response.DesiredAssignments,
+            response.Solutions[0].DesiredAssignments);
+    }
+
+    private static bool AreEquivalentDesiredAssignments(
+        ImmutableArray<DesktopResponseMapper.DesiredAnchorSummary> left,
+        ImmutableArray<DesktopResponseMapper.DesiredAnchorSummary> right)
+    {
+        return left.Length == right.Length &&
+               left.Zip(right).All(pair => AreEquivalentDesiredAnchors(pair.First, pair.Second));
+    }
+
+    private static bool AreEquivalentDesiredAnchors(
+        DesktopResponseMapper.DesiredAnchorSummary left,
+        DesktopResponseMapper.DesiredAnchorSummary right)
+    {
+        return left.CourseCode == right.CourseCode &&
+               left.TeachingTeamKey == right.TeachingTeamKey &&
+               left.TeachingTeamLabel == right.TeachingTeamLabel &&
+               left.CourseName == right.CourseName &&
+               left.SessionCount == right.SessionCount &&
+               left.LhpCodes.SequenceEqual(right.LhpCodes, StringComparer.Ordinal) &&
+               AreEquivalentSessionCollections(left.MatchedSessions, right.MatchedSessions) &&
+               left.LhpSchedules.Length == right.LhpSchedules.Length &&
+               left.LhpSchedules.Zip(right.LhpSchedules).All(pair =>
+                   pair.First.LhpCode == pair.Second.LhpCode &&
+                   pair.First.SessionCount == pair.Second.SessionCount &&
+                   AreEquivalentSessionCollections(pair.First.MatchedSessions, pair.Second.MatchedSessions));
+    }
 
     private static bool HasUniqueRenderedSessionIds(
         IEnumerable<DesktopResponseMapper.DesiredAnchorSummary> desiredAssignments)

@@ -396,7 +396,12 @@ function ResultNotes({ response }: { response: RescheduleResponse }) {
     ...response.solver.explanation,
     ...(response.solved_schedule_validation?.sample_violations ?? []),
   ];
-  const visibleNotes = notes.map(userFacingNote).filter((note): note is string => note !== null);
+  const visibleNotes = [
+    ...(response.parse_summary.partial_import && response.solver.satisfiability !== "UNSAT"
+      ? [COPY.results.partialImportDetail(response.parse_summary.quarantined_lhp_count)]
+      : []),
+    ...notes.map(userFacingNote).filter((note): note is string => note !== null),
+  ];
   if (visibleNotes.length === 0) {
     return null;
   }

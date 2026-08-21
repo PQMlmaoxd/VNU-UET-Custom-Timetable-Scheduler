@@ -353,6 +353,10 @@ export function isRescheduleResponse(value: unknown): value is RescheduleRespons
     && (solver.satisfiability !== "SAT" || response.desired_assignments.length > 0)
     && (solver.satisfiability !== "SAT" || solutions.length > 0)
     && (solver.satisfiability !== "UNSAT" || solutions.length === 0)
+    && hasRootAssignmentsMatchingFirstSolution(
+      response.desired_assignments as DesiredAnchorSummary[],
+      solutions as RescheduleResponse["solutions"],
+    )
     && (response.solved_schedule_validation === null || isValidationSummary(response.solved_schedule_validation));
 }
 
@@ -512,9 +516,14 @@ function isSessionScheduleItem(value: unknown): boolean {
       "period_code",
       "period_atomic",
     ])
-    && ["course_code", "course_name", "lhp_code", "session_type", "timeslot_label", "room_code"].every(
-      (key) => typeof value[key] === "string",
-    )
+    && typeof value.course_code === "string"
+    && typeof value.course_name === "string"
+    && typeof value.lhp_code === "string"
+    && typeof value.session_type === "string"
+    && typeof value.timeslot_label === "string"
+    && typeof value.room_code === "string"
+    && isNonEmptyString(value.course_code)
+    && isNonEmptyString(value.lhp_code)
     && isNonEmptyString(value.session_id)
     && isStringArray(value.lecturer_names)
     && isStringArray(value.cohort_codes)
@@ -525,8 +534,8 @@ function isSessionScheduleItem(value: unknown): boolean {
 }
 
 function isDesiredAssignmentSummary(value: unknown): boolean {
-  return isRecord(value)
-    && hasOnlyKeys(value, [
+  if (!isRecord(value)
+    || !hasOnlyKeys(value, [
       "course_code",
       "teaching_team_key",
       "teaching_team_label",
@@ -536,23 +545,129 @@ function isDesiredAssignmentSummary(value: unknown): boolean {
       "matched_sessions",
       "lhp_schedules",
     ])
-    && ["course_code", "teaching_team_key", "teaching_team_label", "course_name"]
-      .every((key) => typeof value[key] === "string")
-    && isStringArray(value.lhp_codes)
-    && isNonNegativeInteger(value.session_count)
-    && Array.isArray(value.matched_sessions)
-    && value.matched_sessions.length > 0
-    && value.matched_sessions.every(isSessionScheduleItem)
-    && Array.isArray(value.lhp_schedules)
-    && value.lhp_schedules.length > 0
-    && value.lhp_schedules.every((schedule) => isRecord(schedule)
+    || !["course_code", "teaching_team_key", "teaching_team_label", "course_name"]
+      .every((key) => isNonEmptyString(value[key]))
+    || !isStringArray(value.lhp_codes)
+    || !isNonNegativeInteger(value.session_count)
+    || !Array.isArray(value.matched_sessions)
+    || value.matched_sessions.length === 0
+    || !value.matched_sessions.every(isSessionScheduleItem)
+    || !Array.isArray(value.lhp_schedules)
+    || value.lhp_schedules.length === 0
+    || !value.lhp_schedules.every((schedule) => isRecord(schedule)
       && hasOnlyKeys(schedule, ["lhp_code", "session_count", "matched_sessions"])
-      && typeof schedule.lhp_code === "string"
+      && isNonEmptyString(schedule.lhp_code)
       && isNonNegativeInteger(schedule.session_count)
       && Array.isArray(schedule.matched_sessions)
       && schedule.matched_sessions.length > 0
       && schedule.session_count === schedule.matched_sessions.length
-      && schedule.matched_sessions.every(isSessionScheduleItem));
+      && schedule.matched_sessions.every(isSessionScheduleItem))) {
+    return false;
+  }
+
+  return isSemanticallyConsistentDesiredAssignment(value as DesiredAnchorSummary);
+}
+
+function isSemanticallyConsistentDesiredAssignment(anchor: DesiredAnchorSummary): boolean {
+  const lhpCodes = anchor.lhp_codes;
+  const schedules = anchor.lhp_schedules;
+  const renderedSessions = schedules.flatMap((schedule) => schedule.matched_sessions);
+  const scheduleCodes = schedules.map((schedule) => schedule.lhp_code);
+
+  return lhpCodes.length > 0
+    && lhpCodes.every(isNonEmptyString)
+    && new Set(lhpCodes).size === lhpCodes.length
+    && sameStringSet(lhpCodes, scheduleCodes)
+    && anchor.session_count === anchor.matched_sessions.length
+    && anchor.session_count === renderedSessions.length
+    && anchor.matched_sessions.every((session) => session.course_code === anchor.course_code)
+    && schedules.every((schedule) => schedule.matched_sessions.every((session) =>
+      session.course_code === anchor.course_code && session.lhp_code === schedule.lhp_code))
+    && areEquivalentSessionCollections(anchor.matched_sessions, renderedSessions);
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  return left.length === right.length
+    && new Set(left).size === left.length
+    && new Set(right).size === right.length
+    && left.every((value) => right.includes(value));
+}
+
+type SessionScheduleItem = DesiredAnchorSummary["matched_sessions"][number];
+
+function areEquivalentSessionCollections(
+  left: SessionScheduleItem[],
+  right: SessionScheduleItem[],
+): boolean {
+  if (left.length !== right.length
+    || new Set(left.map((session) => session.session_id)).size !== left.length
+    || new Set(right.map((session) => session.session_id)).size !== right.length) {
+    return false;
+  }
+
+  const rightById = new Map(right.map((session) => [session.session_id, session]));
+  return left.every((session) => {
+    const counterpart = rightById.get(session.session_id);
+    return counterpart !== undefined && sessionSemanticKey(session) === sessionSemanticKey(counterpart);
+  });
+}
+
+function sessionSemanticKey(session: SessionScheduleItem): string {
+  return JSON.stringify([
+    session.session_id,
+    session.course_code,
+    session.course_name,
+    session.lhp_code,
+    session.session_type,
+    session.lecturer_names,
+    session.cohort_codes,
+    session.timeslot_label,
+    session.room_code,
+    session.source_row,
+    session.day,
+    session.period_code,
+    session.period_atomic,
+  ]);
+}
+
+function hasRootAssignmentsMatchingFirstSolution(
+  rootAssignments: DesiredAnchorSummary[],
+  solutions: RescheduleResponse["solutions"],
+): boolean {
+  if (solutions.length === 0) {
+    return rootAssignments.length === 0;
+  }
+
+  return areEquivalentDesiredAssignments(rootAssignments, solutions[0].desired_assignments);
+}
+
+function areEquivalentDesiredAssignments(
+  left: DesiredAnchorSummary[],
+  right: DesiredAnchorSummary[],
+): boolean {
+  return left.length === right.length
+    && left.every((anchor, index) => areEquivalentDesiredAssignment(anchor, right[index]));
+}
+
+function areEquivalentDesiredAssignment(
+  left: DesiredAnchorSummary,
+  right: DesiredAnchorSummary,
+): boolean {
+  return left.course_code === right.course_code
+    && left.teaching_team_key === right.teaching_team_key
+    && left.teaching_team_label === right.teaching_team_label
+    && left.course_name === right.course_name
+    && left.session_count === right.session_count
+    && left.lhp_codes.length === right.lhp_codes.length
+    && left.lhp_codes.every((code, index) => code === right.lhp_codes[index])
+    && areEquivalentSessionCollections(left.matched_sessions, right.matched_sessions)
+    && left.lhp_schedules.length === right.lhp_schedules.length
+    && left.lhp_schedules.every((schedule, index) => {
+      const counterpart = right.lhp_schedules[index];
+      return schedule.lhp_code === counterpart.lhp_code
+        && schedule.session_count === counterpart.session_count
+        && areEquivalentSessionCollections(schedule.matched_sessions, counterpart.matched_sessions);
+    });
 }
 
 function hasUniqueRenderedSessionIds(desiredAssignments: DesiredAnchorSummary[]): boolean {

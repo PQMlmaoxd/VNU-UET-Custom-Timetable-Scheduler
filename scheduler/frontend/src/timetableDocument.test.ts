@@ -256,6 +256,70 @@ describe("saved timetable documents", () => {
     });
   });
 
+  it("rejects desired assignments whose session count disagrees with rendered sessions", () => {
+    const invalidDesiredAssignment = { ...desiredAssignment, session_count: 2 };
+    const invalidTimetable = {
+      ...timetable,
+      desired_assignments: [invalidDesiredAssignment],
+      solutions: [{ ...timetable.solutions[0], desired_assignments: [invalidDesiredAssignment] }],
+    };
+
+    expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+      ok: false,
+      code: "invalid-timetable",
+    });
+  });
+
+  it("rejects flat sessions that disagree with nested rendered sessions", () => {
+    const invalidDesiredAssignment = {
+      ...desiredAssignment,
+      matched_sessions: [{ ...session, room_code: "999-Z" }],
+    };
+    const invalidTimetable = {
+      ...timetable,
+      desired_assignments: [invalidDesiredAssignment],
+      solutions: [{ ...timetable.solutions[0], desired_assignments: [invalidDesiredAssignment] }],
+    };
+
+    expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+      ok: false,
+      code: "invalid-timetable",
+    });
+  });
+
+  it("rejects sessions whose LHP code disagrees with their schedule", () => {
+    const invalidDesiredAssignment = {
+      ...desiredAssignment,
+      lhp_codes: ["INT2213-02"],
+      lhp_schedules: [{
+        ...desiredAssignment.lhp_schedules[0],
+        lhp_code: "INT2213-02",
+      }],
+    };
+    const invalidTimetable = {
+      ...timetable,
+      desired_assignments: [invalidDesiredAssignment],
+      solutions: [{ ...timetable.solutions[0], desired_assignments: [invalidDesiredAssignment] }],
+    };
+
+    expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+      ok: false,
+      code: "invalid-timetable",
+    });
+  });
+
+  it("rejects root assignments that differ from the first solution", () => {
+    const invalidTimetable = {
+      ...timetable,
+      desired_assignments: [{ ...desiredAssignment, course_name: "Khác" }],
+    };
+
+    expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+      ok: false,
+      code: "invalid-timetable",
+    });
+  });
+
   it("rejects blank session IDs", () => {
     const invalidSession = { ...session, session_id: " " };
     const invalidDesiredAssignment = {

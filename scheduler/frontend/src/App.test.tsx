@@ -282,6 +282,26 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /INT2213, INT2213-01/ })).toBeInTheDocument();
   });
 
+  it("shows partial-import details when a SAT JSON timetable is reopened", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const partialTimetable = {
+      ...savedTimetableResponse,
+      parse_summary: {
+        ...savedTimetableResponse.parse_summary,
+        partial_import: true,
+        quarantined_lhp_count: 1,
+      },
+    };
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, makeSavedTimetableFile("partial.json", { timetable: partialTimetable }));
+    await user.click(screen.getByRole("button", { name: COPY.upload.readButton }));
+
+    await screen.findByRole("heading", { name: COPY.results.validHeading });
+    expect(screen.getByText(COPY.results.partialImportDetail(1))).toBeInTheDocument();
+  });
+
   it("rejects an invalid saved JSON file without leaving the upload step", async () => {
     const user = userEvent.setup();
     render(<App />);

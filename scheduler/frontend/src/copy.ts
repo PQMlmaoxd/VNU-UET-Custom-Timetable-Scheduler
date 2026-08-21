@@ -163,6 +163,8 @@ export const COPY = {
     loadedSelectionTitle: "File JSON đã có sẵn thời khóa biểu",
     loadedSelectionDetail: "Không cần chọn môn. Quay lại bước kết quả để xem lịch.",
     loadedSelectionButton: "Xem thời khóa biểu",
+    partialImportDetail: (count: number) =>
+      `Kết quả chỉ bao gồm các LHP đủ dữ liệu; đã tạm loại ${count} LHP chưa công bố lịch.`,
     exportUnsat: "Xuất gói kiểm chứng UNSAT",
     partialUnsatDetail: "Kết quả này chỉ áp dụng cho các LHP đã đủ dữ liệu; không thể xuất chứng nhận formal khi file còn LHP chưa công bố lịch.",
     exportingUnsat: "Đang xuất gói…",
