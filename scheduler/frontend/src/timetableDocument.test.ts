@@ -22,6 +22,21 @@ const session = {
   period_atomic: ["1"],
 };
 
+const desiredAssignment = {
+  course_code: "INT2213",
+  teaching_team_key: "team-a",
+  teaching_team_label: "Nguyễn A",
+  course_name: "Mạng Máy Tính",
+  lhp_codes: ["INT2213-01"],
+  session_count: 1,
+  matched_sessions: [session],
+  lhp_schedules: [{
+    lhp_code: "INT2213-01",
+    session_count: 1,
+    matched_sessions: [session],
+  }],
+};
+
 const timetable = {
   mode: "reschedule",
   workbook_path: "timetable.xlsx",
@@ -54,7 +69,7 @@ const timetable = {
     }],
     room_cost_rules: [],
   },
-  desired_assignments: [],
+  desired_assignments: [desiredAssignment],
   existing_schedule_validation: {
     is_valid: true,
     is_complete: true,
@@ -78,20 +93,7 @@ const timetable = {
   solutions: [{
     solution_index: 1,
     movement_cost: 0,
-    desired_assignments: [{
-      course_code: "INT2213",
-      teaching_team_key: "team-a",
-      teaching_team_label: "Nguyễn A",
-      course_name: "Mạng Máy Tính",
-      lhp_codes: ["INT2213-01"],
-      session_count: 1,
-      matched_sessions: [session],
-      lhp_schedules: [{
-        lhp_code: "INT2213-01",
-        session_count: 1,
-        matched_sessions: [session],
-      }],
-    }],
+    desired_assignments: [desiredAssignment],
   }],
 };
 
@@ -188,6 +190,31 @@ describe("saved timetable documents", () => {
       ...timetable,
       solver: { ...timetable.solver, solution_count: tooManySolutions.length },
       solutions: tooManySolutions,
+    };
+
+    expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+      ok: false,
+      code: "invalid-timetable",
+    });
+  });
+
+  it("rejects a SAT timetable without renderable assignments", () => {
+    const invalidTimetable = {
+      ...timetable,
+      desired_assignments: [],
+      solutions: [{ ...timetable.solutions[0], desired_assignments: [] }],
+    };
+
+    expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+      ok: false,
+      code: "invalid-timetable",
+    });
+  });
+
+  it("rejects unknown response properties before native re-save", () => {
+    const invalidTimetable = {
+      ...timetable,
+      solver: { ...timetable.solver, extra: true },
     };
 
     expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({

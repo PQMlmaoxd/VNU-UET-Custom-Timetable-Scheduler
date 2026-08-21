@@ -282,6 +282,14 @@ function parseDesktopBridgeMessage(value: unknown): Record<string, unknown> | nu
 
 function isValidateExistingResponse(value: unknown): value is ValidateExistingResponse {
   return isBaseTimetableResponse(value)
+    && hasOnlyKeys(value, [
+      "mode",
+      "workbook_path",
+      "department",
+      "parse_summary",
+      "prototype_catalog",
+      "existing_schedule_validation",
+    ])
     && value.mode === "validate_existing"
     && isParseSummary(value.parse_summary)
     && isPrototypeCatalog(value.prototype_catalog)
@@ -290,8 +298,8 @@ function isValidateExistingResponse(value: unknown): value is ValidateExistingRe
 
 function isBaseTimetableResponse(value: unknown): value is Record<string, unknown> {
   return isRecord(value)
-    && typeof value.workbook_path === "string"
-    && typeof value.department === "string"
+    && isNonEmptyString(value.workbook_path)
+    && isNonEmptyString(value.department)
     && isParseSummary(value.parse_summary)
     && isPrototypeCatalog(value.prototype_catalog)
     && isValidationSummary(value.existing_schedule_validation);
@@ -311,8 +319,21 @@ export function isRescheduleResponse(value: unknown): value is RescheduleRespons
   const hasUniqueSolutionIndices = new Set(solutionIndices).size === solutionIndices.length
     && solutionIndices.every((index, position) => index === position + 1);
 
-  return response.mode === "reschedule"
+  return hasOnlyKeys(response, [
+    "mode",
+    "workbook_path",
+    "department",
+    "parse_summary",
+    "prototype_catalog",
+    "desired_assignments",
+    "solutions",
+    "existing_schedule_validation",
+    "solver",
+    "solved_schedule_validation",
+  ])
+    && response.mode === "reschedule"
     && Array.isArray(response.desired_assignments)
+    && response.desired_assignments.length > 0
     && response.desired_assignments.every(isDesiredAssignmentSummary)
     && Array.isArray(solutions)
     && solutions.every(isSelectedSolution)
@@ -339,6 +360,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return Object.keys(value).length === keys.length
+    && keys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
+}
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
@@ -352,24 +382,41 @@ function isNonNegativeInteger(value: unknown): value is number {
 }
 
 function isParseSummary(value: unknown): boolean {
-  if (!isRecord(value)) {
+  if (!isRecord(value) || !hasOnlyKeys(value, [
+    "sessions",
+    "schedulable_sessions",
+    "online_sessions",
+    "other_department_sessions",
+    "lecturer_blocks",
+    "anchor_count",
+    "requested_assignments",
+    "rooms",
+    "skipped_rows",
+    "fatal_warning_count",
+    "partial_import",
+    "quarantined_lhp_count",
+    "quarantined_session_count",
+    "warnings",
+    "fatal_warnings",
+    "quarantined_offerings",
+  ])) {
     return false;
   }
 
   const numericFieldsValid = [
-      "sessions",
-      "schedulable_sessions",
-      "online_sessions",
-      "other_department_sessions",
-      "lecturer_blocks",
-      "anchor_count",
-      "requested_assignments",
-      "rooms",
-      "skipped_rows",
-      "fatal_warning_count",
-      "quarantined_lhp_count",
-      "quarantined_session_count",
-    ].every((key) => isNonNegativeInteger(value[key]));
+    "sessions",
+    "schedulable_sessions",
+    "online_sessions",
+    "other_department_sessions",
+    "lecturer_blocks",
+    "anchor_count",
+    "requested_assignments",
+    "rooms",
+    "skipped_rows",
+    "fatal_warning_count",
+    "quarantined_lhp_count",
+    "quarantined_session_count",
+  ].every((key) => isNonNegativeInteger(value[key]));
 
   return numericFieldsValid
     && typeof value.partial_import === "boolean"
@@ -377,6 +424,14 @@ function isParseSummary(value: unknown): boolean {
     && isStringArray(value.fatal_warnings)
     && Array.isArray(value.quarantined_offerings)
     && value.quarantined_offerings.every((offering) => isRecord(offering)
+      && hasOnlyKeys(offering, [
+        "course_code",
+        "lhp_code",
+        "reason_code",
+        "source_locations",
+        "quarantined_row_count",
+        "excluded_session_count",
+      ])
       && typeof offering.course_code === "string"
       && typeof offering.lhp_code === "string"
       && typeof offering.reason_code === "string"
@@ -391,8 +446,16 @@ function isParseSummary(value: unknown): boolean {
 
 function isPrototypeCatalog(value: unknown): boolean {
   return isRecord(value)
+    && hasOnlyKeys(value, ["anchors", "room_cost_rules"])
     && Array.isArray(value.anchors)
     && value.anchors.every((anchor) => isRecord(anchor)
+      && hasOnlyKeys(anchor, [
+        "course_code",
+        "course_name",
+        "teaching_team_key",
+        "teaching_team_label",
+        "session_count",
+      ])
       && typeof anchor.course_code === "string"
       && typeof anchor.course_name === "string"
       && typeof anchor.teaching_team_key === "string"
@@ -400,6 +463,7 @@ function isPrototypeCatalog(value: unknown): boolean {
       && isNonNegativeInteger(anchor.session_count))
     && Array.isArray(value.room_cost_rules)
     && value.room_cost_rules.every((rule) => isRecord(rule)
+      && hasOnlyKeys(rule, ["from_zone", "to_zone", "cost", "description"])
       && typeof rule.from_zone === "string"
       && typeof rule.to_zone === "string"
       && isInteger(rule.cost)
@@ -408,6 +472,13 @@ function isPrototypeCatalog(value: unknown): boolean {
 
 function isValidationSummary(value: unknown): boolean {
   return isRecord(value)
+    && hasOnlyKeys(value, [
+      "is_valid",
+      "is_complete",
+      "violation_count",
+      "missing_session_count",
+      "sample_violations",
+    ])
     && typeof value.is_valid === "boolean"
     && typeof value.is_complete === "boolean"
     && isNonNegativeInteger(value.violation_count)
@@ -417,6 +488,21 @@ function isValidationSummary(value: unknown): boolean {
 
 function isSessionScheduleItem(value: unknown): boolean {
   return isRecord(value)
+    && hasOnlyKeys(value, [
+      "session_id",
+      "course_code",
+      "course_name",
+      "lhp_code",
+      "session_type",
+      "lecturer_names",
+      "cohort_codes",
+      "timeslot_label",
+      "room_code",
+      "source_row",
+      "day",
+      "period_code",
+      "period_atomic",
+    ])
     && ["session_id", "course_code", "course_name", "lhp_code", "session_type", "timeslot_label", "room_code"].every(
       (key) => typeof value[key] === "string",
     )
@@ -430,6 +516,16 @@ function isSessionScheduleItem(value: unknown): boolean {
 
 function isDesiredAssignmentSummary(value: unknown): boolean {
   return isRecord(value)
+    && hasOnlyKeys(value, [
+      "course_code",
+      "teaching_team_key",
+      "teaching_team_label",
+      "course_name",
+      "lhp_codes",
+      "session_count",
+      "matched_sessions",
+      "lhp_schedules",
+    ])
     && ["course_code", "teaching_team_key", "teaching_team_label", "course_name"]
       .every((key) => typeof value[key] === "string")
     && isStringArray(value.lhp_codes)
@@ -438,6 +534,7 @@ function isDesiredAssignmentSummary(value: unknown): boolean {
     && value.matched_sessions.every(isSessionScheduleItem)
     && Array.isArray(value.lhp_schedules)
     && value.lhp_schedules.every((schedule) => isRecord(schedule)
+      && hasOnlyKeys(schedule, ["lhp_code", "session_count", "matched_sessions"])
       && typeof schedule.lhp_code === "string"
       && isNonNegativeInteger(schedule.session_count)
       && Array.isArray(schedule.matched_sessions)
@@ -446,9 +543,11 @@ function isDesiredAssignmentSummary(value: unknown): boolean {
 
 function isSelectedSolution(value: unknown): boolean {
   return isRecord(value)
+    && hasOnlyKeys(value, ["solution_index", "movement_cost", "desired_assignments"])
     && isInteger(value.solution_index)
     && isInteger(value.movement_cost)
     && Array.isArray(value.desired_assignments)
+    && value.desired_assignments.length > 0
     && value.desired_assignments.every(isDesiredAssignmentSummary);
 }
 
@@ -462,6 +561,18 @@ function isSolverSummary(value: unknown): value is SolverSummaryShape {
   const solutionCount = value.solution_count;
   const assignmentCount = value.assignment_count;
   const validShape = typeof value.backend === "string"
+    && hasOnlyKeys(value, [
+      "backend",
+      "status",
+      "satisfiability",
+      "solve_time_ms",
+      "objective_value",
+      "assignment_count",
+      "solution_count",
+      "solver_info",
+      "explanation",
+      "formal_verification_token",
+    ])
     && ["feasible", "infeasible", "timeout"].includes(status as string)
     && ["SAT", "UNSAT", "UNKNOWN"].includes(satisfiability as string)
     && typeof value.solver_info === "string"

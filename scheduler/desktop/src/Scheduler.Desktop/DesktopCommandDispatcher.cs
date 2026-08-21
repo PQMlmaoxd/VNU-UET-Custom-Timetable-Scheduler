@@ -496,14 +496,14 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
     }
 
     private static bool IsCompleteRescheduleResponse(DesktopResponseMapper.RescheduleResponse response) =>
-        !response.DesiredAssignments.IsDefault &&
+        !response.DesiredAssignments.IsDefaultOrEmpty &&
         IsCompleteParseSummary(response.ParseSummary) &&
         IsCompletePrototypeCatalog(response.PrototypeCatalog) &&
         IsCompleteValidationSummary(response.ExistingScheduleValidation) &&
         IsCompleteSolverSummary(response.Solver) &&
         response.Solutions.All(solution =>
             solution is not null &&
-            !solution.DesiredAssignments.IsDefault &&
+            !solution.DesiredAssignments.IsDefaultOrEmpty &&
             solution.DesiredAssignments.All(IsCompleteDesiredAnchor)) &&
          (response.SolvedScheduleValidation is null ||
           IsCompleteValidationSummary(response.SolvedScheduleValidation));
