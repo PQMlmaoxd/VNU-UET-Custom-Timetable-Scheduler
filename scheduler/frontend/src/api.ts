@@ -797,7 +797,7 @@ function hasUniqueAnchorIdentities(desiredAssignments: DesiredAnchorSummary[]): 
 function hasUniqueSolutionPlacements(solutions: SelectedSolutionItem[]): boolean {
   for (let leftIndex = 0; leftIndex < solutions.length; leftIndex += 1) {
     for (let rightIndex = leftIndex + 1; rightIndex < solutions.length; rightIndex += 1) {
-      if (areEquivalentDesiredAssignments(
+      if (areEquivalentSolutionPlacements(
         solutions[leftIndex].desired_assignments,
         solutions[rightIndex].desired_assignments,
       )) {
@@ -807,6 +807,62 @@ function hasUniqueSolutionPlacements(solutions: SelectedSolutionItem[]): boolean
   }
 
   return true;
+}
+
+function areEquivalentSolutionPlacements(
+  left: DesiredAnchorSummary[],
+  right: DesiredAnchorSummary[],
+): boolean {
+  return left.length === right.length
+    && left.every((anchor, index) => areEquivalentPlacementAnchors(anchor, right[index]));
+}
+
+function areEquivalentPlacementAnchors(
+  left: DesiredAnchorSummary,
+  right: DesiredAnchorSummary,
+): boolean {
+  return areEquivalentDesiredAnchorIdentities([left], [right])
+    && left.session_count === right.session_count
+    && left.lhp_codes.length === right.lhp_codes.length
+    && left.lhp_codes.every((code, index) => code === right.lhp_codes[index])
+    && left.lhp_schedules.length === right.lhp_schedules.length
+    && left.lhp_schedules.every((schedule, index) => {
+      const counterpart = right.lhp_schedules[index];
+      return schedule.lhp_code === counterpart.lhp_code
+        && schedule.session_count === counterpart.session_count
+        && areEquivalentPlacementSessionCollections(schedule.matched_sessions, counterpart.matched_sessions);
+    });
+}
+
+function areEquivalentPlacementSessionCollections(
+  left: SessionScheduleItem[],
+  right: SessionScheduleItem[],
+): boolean {
+  if (left.length !== right.length
+    || new Set(left.map((session) => session.session_id)).size !== left.length
+    || new Set(right.map((session) => session.session_id)).size !== right.length) {
+    return false;
+  }
+
+  const rightById = new Map(right.map((session) => [session.session_id, session]));
+  return left.every((session) => {
+    const counterpart = rightById.get(session.session_id);
+    return counterpart !== undefined && areEquivalentPlacementSessions(session, counterpart);
+  });
+}
+
+function areEquivalentPlacementSessions(
+  left: SessionScheduleItem,
+  right: SessionScheduleItem,
+): boolean {
+  return left.session_id === right.session_id
+    && left.course_code === right.course_code
+    && left.lhp_code === right.lhp_code
+    && left.session_type === right.session_type
+    && left.room_code === right.room_code
+    && left.day === right.day
+    && left.period_code === right.period_code
+    && JSON.stringify(left.period_atomic) === JSON.stringify(right.period_atomic);
 }
 
 function hasMovementCostConsistency(solutions: SelectedSolutionItem[]): boolean {

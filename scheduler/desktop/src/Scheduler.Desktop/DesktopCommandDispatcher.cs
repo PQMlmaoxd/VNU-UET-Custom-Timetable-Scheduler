@@ -920,7 +920,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         {
             for (var rightIndex = leftIndex + 1; rightIndex < solutions.Length; rightIndex++)
             {
-                if (AreEquivalentDesiredAssignments(
+                if (AreEquivalentSolutionPlacements(
                     solutions[leftIndex].DesiredAssignments,
                     solutions[rightIndex].DesiredAssignments))
                 {
@@ -931,6 +931,61 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
 
         return true;
     }
+
+    private static bool AreEquivalentSolutionPlacements(
+        ImmutableArray<DesktopResponseMapper.DesiredAnchorSummary> left,
+        ImmutableArray<DesktopResponseMapper.DesiredAnchorSummary> right)
+    {
+        return left.Length == right.Length &&
+               left.Zip(right).All(pair => AreEquivalentPlacementAnchors(pair.First, pair.Second));
+    }
+
+    private static bool AreEquivalentPlacementAnchors(
+        DesktopResponseMapper.DesiredAnchorSummary left,
+        DesktopResponseMapper.DesiredAnchorSummary right)
+    {
+        return AreEquivalentDesiredAnchorIdentities([left], [right]) &&
+               left.SessionCount == right.SessionCount &&
+               left.LhpCodes.SequenceEqual(right.LhpCodes, StringComparer.Ordinal) &&
+               left.LhpSchedules.Length == right.LhpSchedules.Length &&
+               left.LhpSchedules.Zip(right.LhpSchedules).All(pair =>
+                   pair.First.LhpCode == pair.Second.LhpCode &&
+                   pair.First.SessionCount == pair.Second.SessionCount &&
+                   AreEquivalentPlacementSessionCollections(
+                       pair.First.MatchedSessions,
+                       pair.Second.MatchedSessions));
+    }
+
+    private static bool AreEquivalentPlacementSessionCollections(
+        IEnumerable<DesktopResponseMapper.SessionScheduleItem> left,
+        IEnumerable<DesktopResponseMapper.SessionScheduleItem> right)
+    {
+        var leftSessions = left.ToArray();
+        var rightSessions = right.ToArray();
+        if (leftSessions.Length != rightSessions.Length ||
+            leftSessions.Select(session => session.SessionId).Distinct(StringComparer.Ordinal).Count() != leftSessions.Length ||
+            rightSessions.Select(session => session.SessionId).Distinct(StringComparer.Ordinal).Count() != rightSessions.Length)
+        {
+            return false;
+        }
+
+        var rightById = rightSessions.ToDictionary(session => session.SessionId, StringComparer.Ordinal);
+        return leftSessions.All(session =>
+            rightById.TryGetValue(session.SessionId, out var counterpart) &&
+            AreEquivalentPlacementSessions(session, counterpart));
+    }
+
+    private static bool AreEquivalentPlacementSessions(
+        DesktopResponseMapper.SessionScheduleItem left,
+        DesktopResponseMapper.SessionScheduleItem right) =>
+        left.SessionId == right.SessionId &&
+        left.CourseCode == right.CourseCode &&
+        left.LhpCode == right.LhpCode &&
+        left.SessionType == right.SessionType &&
+        left.RoomCode == right.RoomCode &&
+        left.Day == right.Day &&
+        left.PeriodCode == right.PeriodCode &&
+        AreEquivalentOptionalArrays(left.PeriodAtomic, right.PeriodAtomic);
 
     private static bool HasMovementCostConsistency(
         ImmutableArray<DesktopResponseMapper.SelectedSolutionItem> solutions)

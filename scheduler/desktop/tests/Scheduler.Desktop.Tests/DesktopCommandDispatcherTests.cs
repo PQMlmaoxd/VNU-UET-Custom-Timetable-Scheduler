@@ -943,6 +943,10 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
         var solutions = timetable["solutions"]!.AsArray();
         var duplicate = JsonNode.Parse(solutions[0]!.ToJsonString())!.AsObject();
         duplicate["solution_index"] = 2;
+        duplicate["desired_assignments"]!.AsArray()[0]!["matched_sessions"]!.AsArray()[0]!["source_row"] = 99;
+        duplicate["desired_assignments"]!.AsArray()[0]!["matched_sessions"]!.AsArray()[0]!["timeslot_label"] = "Metadata only";
+        duplicate["desired_assignments"]!.AsArray()[0]!["lhp_schedules"]!.AsArray()[0]!["matched_sessions"]!.AsArray()[0]!["source_row"] = 99;
+        duplicate["desired_assignments"]!.AsArray()[0]!["lhp_schedules"]!.AsArray()[0]!["matched_sessions"]!.AsArray()[0]!["timeslot_label"] = "Metadata only";
         solutions.Add(duplicate);
         timetable["solver"]!.AsObject()["solution_count"] = 2;
 
@@ -1016,17 +1020,20 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
             .GetProperty("session_id")
             .GetString();
         var serializedOriginalSessionId = JsonSerializer.Serialize(originalSessionId);
-        var invalidTimetableJson = response.GetRawText().Replace(
-            serializedOriginalSessionId,
-            "\"\\uD800\"",
-            StringComparison.Ordinal);
-        using var invalidPayload = JsonDocument.Parse(
-            "{\"timetable\":" + invalidTimetableJson + ",\"source_file_name\":\"source.xlsx\"}");
+        foreach (var malformedToken in new[] { "\"\\uD800\"", "\"\\uDC00\"", "\"\\uFFFD\"" })
+        {
+            var invalidTimetableJson = response.GetRawText().Replace(
+                serializedOriginalSessionId,
+                malformedToken,
+                StringComparison.Ordinal);
+            using var invalidPayload = JsonDocument.Parse(
+                "{\"timetable\":" + invalidTimetableJson + ",\"source_file_name\":\"source.xlsx\"}");
 
-        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
-            "save_timetable",
-            invalidPayload.RootElement,
-            CancellationToken.None));
+            await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+                "save_timetable",
+                invalidPayload.RootElement,
+                CancellationToken.None));
+        }
     }
 
     [Fact]

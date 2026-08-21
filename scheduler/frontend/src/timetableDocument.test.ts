@@ -540,7 +540,19 @@ describe("saved timetable documents", () => {
   });
 
   it("rejects duplicate solution placements", () => {
-    const duplicateSolution = { ...timetable.solutions[0], solution_index: 2 };
+    const duplicateAssignment = {
+      ...desiredAssignment,
+      matched_sessions: [{ ...session, source_row: 99, timeslot_label: "Metadata only" }],
+      lhp_schedules: [{
+        ...desiredAssignment.lhp_schedules[0],
+        matched_sessions: [{ ...session, source_row: 99, timeslot_label: "Metadata only" }],
+      }],
+    };
+    const duplicateSolution = {
+      ...timetable.solutions[0],
+      solution_index: 2,
+      desired_assignments: [duplicateAssignment],
+    };
     const invalidTimetable = {
       ...timetable,
       solver: { ...timetable.solver, solution_count: 2 },
@@ -639,8 +651,12 @@ describe("saved timetable documents", () => {
     });
   });
 
-  it("rejects malformed UTF-16 session IDs", () => {
-    const invalidSession = { ...session, session_id: String.fromCharCode(0xD800) };
+  it.each([
+    String.fromCharCode(0xD800),
+    String.fromCharCode(0xDC00),
+    "\uFFFD",
+  ])("rejects malformed UTF-16 session ID %j", (sessionId) => {
+    const invalidSession = { ...session, session_id: sessionId };
     const invalidDesiredAssignment = {
       ...desiredAssignment,
       matched_sessions: [invalidSession],
