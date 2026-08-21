@@ -524,6 +524,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         !response.DesiredAssignments.IsDefaultOrEmpty &&
         response.DesiredAssignments.All(IsCompleteDesiredAnchor) &&
         HasUniqueRenderedSessionIds(response.DesiredAssignments) &&
+        HasUniqueAnchorIdentities(response.DesiredAssignments) &&
         IsCompleteParseSummary(response.ParseSummary) &&
         IsCompletePrototypeCatalog(response.PrototypeCatalog) &&
         IsCompleteValidationSummary(response.ExistingScheduleValidation) &&
@@ -533,8 +534,11 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
             solution.MovementCost >= 0 &&
             !solution.DesiredAssignments.IsDefaultOrEmpty &&
             solution.DesiredAssignments.All(IsCompleteDesiredAnchor) &&
-            HasUniqueRenderedSessionIds(solution.DesiredAssignments)) &&
+            HasUniqueRenderedSessionIds(solution.DesiredAssignments) &&
+            HasUniqueAnchorIdentities(solution.DesiredAssignments)) &&
         HasRootAssignmentsMatchingEverySolution(response) &&
+        HasUniqueSolutionPlacements(response.Solutions) &&
+        HasMovementCostConsistency(response.Solutions) &&
         (response.SolvedScheduleValidation is null ||
          IsCompleteValidationSummary(response.SolvedScheduleValidation));
 
@@ -670,7 +674,9 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         !string.IsNullOrWhiteSpace(session.LhpCode) &&
         session.SessionType is not null &&
         session.TimeslotLabel is not null &&
-        session.RoomCode is not null &&
+        !string.IsNullOrWhiteSpace(session.RoomCode) &&
+        session.RoomCode != "-" &&
+        (session.SessionType == "ONL" ? session.RoomCode == "ONL" : session.RoomCode != "ONL") &&
         !session.LecturerNames.IsDefault &&
         !session.CohortCodes.IsDefault &&
         session.LecturerNames.All(name => name is not null) &&
@@ -683,9 +689,10 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
 
     private static bool IsValidSessionTiming(DesktopResponseMapper.SessionScheduleItem session)
     {
+        var isOnline = session.SessionType == "ONL";
         if (session.Day is null && session.PeriodCode is null && session.PeriodAtomic is null)
         {
-            return true;
+            return isOnline && session.RoomCode == "ONL";
         }
 
         if (session.Day is null or < 2 or > 7 ||
@@ -816,9 +823,14 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
             return response.DesiredAssignments.IsDefaultOrEmpty;
         }
 
-        return response.Solutions.All(solution =>
-            solution is not null &&
-            AreEquivalentDesiredAssignments(response.DesiredAssignments, solution.DesiredAssignments));
+        return AreEquivalentDesiredAssignments(
+                   response.DesiredAssignments,
+                   response.Solutions[0].DesiredAssignments) &&
+               response.Solutions.All(solution =>
+                   solution is not null &&
+                   AreEquivalentDesiredAnchorIdentities(
+                       response.DesiredAssignments,
+                       solution.DesiredAssignments));
     }
 
     private static bool AreEquivalentDesiredAssignments(
@@ -827,6 +839,18 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
     {
         return left.Length == right.Length &&
                left.Zip(right).All(pair => AreEquivalentDesiredAnchors(pair.First, pair.Second));
+    }
+
+    private static bool AreEquivalentDesiredAnchorIdentities(
+        ImmutableArray<DesktopResponseMapper.DesiredAnchorSummary> left,
+        ImmutableArray<DesktopResponseMapper.DesiredAnchorSummary> right)
+    {
+        return left.Length == right.Length &&
+               left.Zip(right).All(pair =>
+                   pair.First.CourseCode == pair.Second.CourseCode &&
+                   pair.First.TeachingTeamKey == pair.Second.TeachingTeamKey &&
+                   pair.First.TeachingTeamLabel == pair.Second.TeachingTeamLabel &&
+                   pair.First.CourseName == pair.Second.CourseName);
     }
 
     private static bool AreEquivalentDesiredAnchors(
@@ -845,6 +869,136 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
                    pair.First.LhpCode == pair.Second.LhpCode &&
                    pair.First.SessionCount == pair.Second.SessionCount &&
                    AreEquivalentSessionCollections(pair.First.MatchedSessions, pair.Second.MatchedSessions));
+    }
+
+    private static bool HasUniqueAnchorIdentities(
+        IEnumerable<DesktopResponseMapper.DesiredAnchorSummary> desiredAssignments)
+    {
+        var identities = new HashSet<(string CourseCode, string TeachingTeamKey)>();
+        return desiredAssignments.All(anchor =>
+            identities.Add((anchor.CourseCode, anchor.TeachingTeamKey)));
+    }
+
+    private static bool HasUniqueSolutionPlacements(
+        ImmutableArray<DesktopResponseMapper.SelectedSolutionItem> solutions)
+    {
+        for (var leftIndex = 0; leftIndex < solutions.Length; leftIndex++)
+        {
+            for (var rightIndex = leftIndex + 1; rightIndex < solutions.Length; rightIndex++)
+            {
+                if (AreEquivalentDesiredAssignments(
+                    solutions[leftIndex].DesiredAssignments,
+                    solutions[rightIndex].DesiredAssignments))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static bool HasMovementCostConsistency(
+        ImmutableArray<DesktopResponseMapper.SelectedSolutionItem> solutions)
+    {
+        var previousCost = -1L;
+        foreach (var solution in solutions)
+        {
+            var expectedCost = CalculateMovementCost(solution);
+            if (solution.MovementCost != expectedCost || expectedCost < previousCost)
+            {
+                return false;
+            }
+
+            previousCost = expectedCost;
+        }
+
+        return true;
+    }
+
+    private static long CalculateMovementCost(
+        DesktopResponseMapper.SelectedSolutionItem solution)
+    {
+        var sessionsByDay = new Dictionary<int, List<MovementCostSession>>();
+        foreach (var session in solution.DesiredAssignments
+                     .SelectMany(anchor => anchor.LhpSchedules)
+                     .SelectMany(schedule => schedule.MatchedSessions))
+        {
+            if (session.Day is not { } day || session.PeriodAtomic is not { } periods)
+            {
+                continue;
+            }
+
+            var daySessions = sessionsByDay.GetValueOrDefault(day);
+            if (daySessions is null)
+            {
+                daySessions = [];
+                sessionsByDay.Add(day, daySessions);
+            }
+
+            daySessions.Add(new MovementCostSession(
+                int.Parse(periods[0], CultureInfo.InvariantCulture),
+                int.Parse(periods[^1], CultureInfo.InvariantCulture),
+                session));
+        }
+
+        var totalCost = 0L;
+        foreach (var daySessions in sessionsByDay.Values)
+        {
+            var ordered = daySessions
+                .OrderBy(item => item.StartPeriod)
+                .ThenBy(item => item.EndPeriod)
+                .ThenBy(item => item.Session.SourceRow)
+                .ThenBy(item => item.Session.SessionId, StringComparer.Ordinal)
+                .ToArray();
+            for (var index = 1; index < ordered.Length; index++)
+            {
+                var previous = ordered[index - 1];
+                var current = ordered[index];
+                if (previous.EndPeriod + 1 == current.StartPeriod)
+                {
+                    totalCost += CalculateTransitionCost(previous.Session, current.Session);
+                }
+            }
+        }
+
+        return totalCost;
+    }
+
+    private static int CalculateTransitionCost(
+        DesktopResponseMapper.SessionScheduleItem from,
+        DesktopResponseMapper.SessionScheduleItem to)
+    {
+        if (from.SessionType == "ONL" ||
+            to.SessionType == "ONL" ||
+            from.RoomCode == "ONL" ||
+            to.RoomCode == "ONL")
+        {
+            return 0;
+        }
+
+        if (from.RoomCode == to.RoomCode)
+        {
+            return RoomMovement.SameRoomCost;
+        }
+
+        var fromBuilding = RoomBuilding(from.RoomCode);
+        var toBuilding = RoomBuilding(to.RoomCode);
+        if (fromBuilding == toBuilding)
+        {
+            return RoomMovement.SameBuildingCost;
+        }
+
+        return RoomMovement.MovementZoneForBuilding(fromBuilding) ==
+               RoomMovement.MovementZoneForBuilding(toBuilding)
+            ? RoomMovement.SameZoneCost
+            : RoomMovement.CrossZoneCost;
+    }
+
+    private static string RoomBuilding(string roomCode)
+    {
+        var separator = roomCode.LastIndexOf('-');
+        return separator < 0 ? roomCode : roomCode[(separator + 1)..];
     }
 
     private static bool HasUniqueRenderedSessionIds(
@@ -1006,6 +1160,11 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         string DesiredAssignmentSignature,
         TimetableFileFormat Format,
         DateTimeOffset CreatedUtc);
+
+    private sealed record MovementCostSession(
+        int StartPeriod,
+        int EndPeriod,
+        DesktopResponseMapper.SessionScheduleItem Session);
 
     private sealed record DesiredAssignmentPayload(
         [property: JsonPropertyName("course_code")] string? CourseCode,

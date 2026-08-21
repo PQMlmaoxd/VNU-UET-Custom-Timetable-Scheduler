@@ -117,7 +117,7 @@ const solveResponse = {
   solutions: [
     {
       solution_index: 1,
-      movement_cost: 2,
+      movement_cost: 0,
       desired_assignments: [solveDesiredAssignment],
     },
   ],

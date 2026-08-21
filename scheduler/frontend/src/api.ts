@@ -3,6 +3,7 @@ import type {
   DesiredAnchorSummary,
   RescheduleResponse,
   SaveTimetableResponse,
+  SelectedSolutionItem,
   ValidateExistingResponse,
 } from "./types";
 import type { ThemePreference } from "./theme";
@@ -42,6 +43,16 @@ const EXPECTED_PERIOD_ATOMICS = new Map<string, readonly string[]>([
   ["3-4", ["3", "4"]],
   ["Sáng", ["1", "2"]],
   ["Chiều", ["3", "4"]],
+]);
+const MOVEMENT_ZONE_BY_BUILDING = new Map<string, string>([
+  ["A", "GD4"],
+  ["B", "GD4"],
+  ["T", "GD3"],
+  ["GĐ3", "GD3"],
+  ["G2", "GD2"],
+  ["G3", "GD2"],
+  ["E3", "GD2"],
+  ["E5", "GD2"],
 ]);
 
 type ResultValidator<T> = (value: unknown) => value is T;
@@ -366,9 +377,11 @@ export function isRescheduleResponse(value: unknown): value is RescheduleRespons
     && hasUniqueSolutionIndices
     && (response.desired_assignments.length === 0
       || hasUniqueRenderedSessionIds(response.desired_assignments as DesiredAnchorSummary[]))
-    && isSolverSummary(solver)
-    && solver.solution_count === solutions.length
-    && solutions.length <= MAX_TIMETABLE_SOLUTIONS
+    && (response.desired_assignments.length === 0
+      || hasUniqueAnchorIdentities(response.desired_assignments as DesiredAnchorSummary[]))
+     && isSolverSummary(solver)
+     && solver.solution_count === solutions.length
+     && solutions.length <= MAX_TIMETABLE_SOLUTIONS
     && (solver.satisfiability !== "SAT" || response.desired_assignments.length > 0)
     && (solver.satisfiability !== "SAT" || solutions.length > 0)
     && (solver.satisfiability !== "UNSAT" || solutions.length === 0)
@@ -376,6 +389,8 @@ export function isRescheduleResponse(value: unknown): value is RescheduleRespons
       response.desired_assignments as DesiredAnchorSummary[],
       solutions as RescheduleResponse["solutions"],
     )
+    && hasUniqueSolutionPlacements(solutions as RescheduleResponse["solutions"])
+    && hasMovementCostConsistency(solutions as RescheduleResponse["solutions"])
     && (response.solved_schedule_validation === null || isValidationSummary(response.solved_schedule_validation));
 }
 
@@ -545,6 +560,7 @@ function isSessionScheduleItem(value: unknown): boolean {
     && isNonEmptyString(value.course_code)
     && isNonEmptyString(value.lhp_code)
     && isNonEmptyString(value.session_id)
+    && isNonEmptyString(value.room_code)
     && isStringArray(value.lecturer_names)
     && isStringArray(value.cohort_codes)
     && isInteger(value.source_row)
@@ -556,8 +572,13 @@ function isSessionScheduleItem(value: unknown): boolean {
 
 function isValidSessionTiming(value: Record<string, unknown>): boolean {
   const { day, period_code: periodCode, period_atomic: periodAtomic } = value;
+  const isOnline = value.session_type === "ONL";
+  if (value.room_code === "-" || (isOnline ? value.room_code !== "ONL" : value.room_code === "ONL")) {
+    return false;
+  }
+
   if (day === null && periodCode === null && periodAtomic === null) {
-    return true;
+    return isOnline;
   }
 
   if (!isInteger(day)
@@ -685,8 +706,9 @@ function hasRootAssignmentsMatchingEverySolution(
     return rootAssignments.length === 0;
   }
 
-  return solutions.every((solution) =>
-    areEquivalentDesiredAssignments(rootAssignments, solution.desired_assignments));
+  return areEquivalentDesiredAssignments(rootAssignments, solutions[0].desired_assignments)
+    && solutions.every((solution) =>
+      areEquivalentDesiredAnchorIdentities(rootAssignments, solution.desired_assignments));
 }
 
 function areEquivalentDesiredAssignments(
@@ -695,6 +717,20 @@ function areEquivalentDesiredAssignments(
 ): boolean {
   return left.length === right.length
     && left.every((anchor, index) => areEquivalentDesiredAssignment(anchor, right[index]));
+}
+
+function areEquivalentDesiredAnchorIdentities(
+  left: DesiredAnchorSummary[],
+  right: DesiredAnchorSummary[],
+): boolean {
+  return left.length === right.length
+    && left.every((anchor, index) => {
+      const counterpart = right[index];
+      return anchor.course_code === counterpart.course_code
+        && anchor.teaching_team_key === counterpart.teaching_team_key
+        && anchor.teaching_team_label === counterpart.teaching_team_label
+        && anchor.course_name === counterpart.course_name;
+    });
 }
 
 function areEquivalentDesiredAssignment(
@@ -724,6 +760,122 @@ function hasUniqueRenderedSessionIds(desiredAssignments: DesiredAnchorSummary[])
   return new Set(sessionIds).size === sessionIds.length;
 }
 
+function hasUniqueAnchorIdentities(desiredAssignments: DesiredAnchorSummary[]): boolean {
+  const keys = desiredAssignments.map((anchor) => JSON.stringify([
+    anchor.course_code,
+    anchor.teaching_team_key,
+  ]));
+  return new Set(keys).size === keys.length;
+}
+
+function hasUniqueSolutionPlacements(solutions: SelectedSolutionItem[]): boolean {
+  for (let leftIndex = 0; leftIndex < solutions.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < solutions.length; rightIndex += 1) {
+      if (areEquivalentDesiredAssignments(
+        solutions[leftIndex].desired_assignments,
+        solutions[rightIndex].desired_assignments,
+      )) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+function hasMovementCostConsistency(solutions: SelectedSolutionItem[]): boolean {
+  let previousCost = -1;
+  for (const solution of solutions) {
+    const recomputedCost = calculateMovementCost(solution);
+    if (solution.movement_cost !== recomputedCost || recomputedCost < previousCost) {
+      return false;
+    }
+    previousCost = recomputedCost;
+  }
+
+  return true;
+}
+
+type CostSession = {
+  session: SessionScheduleItem;
+  startPeriod: number;
+  endPeriod: number;
+};
+
+function calculateMovementCost(solution: SelectedSolutionItem): number {
+  const sessionsByDay = new Map<number, CostSession[]>();
+  for (const session of solution.desired_assignments.flatMap((anchor) =>
+    anchor.lhp_schedules.flatMap((schedule) => schedule.matched_sessions))) {
+    if (session.day === null || session.period_atomic === null) {
+      continue;
+    }
+
+    const periods = session.period_atomic;
+    const daySessions = sessionsByDay.get(session.day) ?? [];
+    daySessions.push({
+      session,
+      startPeriod: Number(periods[0]),
+      endPeriod: Number(periods[periods.length - 1]),
+    });
+    sessionsByDay.set(session.day, daySessions);
+  }
+
+  let totalCost = 0;
+  for (const daySessions of sessionsByDay.values()) {
+    const ordered = [...daySessions].sort((left, right) =>
+      left.startPeriod - right.startPeriod
+      || left.endPeriod - right.endPeriod
+      || left.session.source_row - right.session.source_row
+      || left.session.session_id.localeCompare(right.session.session_id));
+    for (let index = 1; index < ordered.length; index += 1) {
+      const previous = ordered[index - 1];
+      const current = ordered[index];
+      if (previous.endPeriod + 1 === current.startPeriod) {
+        totalCost += transitionCost(previous.session, current.session);
+      }
+    }
+  }
+
+  return totalCost;
+}
+
+function transitionCost(
+  from: SessionScheduleItem,
+  to: SessionScheduleItem,
+): number {
+  if (from.session_type === "ONL"
+    || to.session_type === "ONL"
+    || from.room_code === "ONL"
+    || to.room_code === "ONL") {
+    return 0;
+  }
+
+  if (from.room_code === to.room_code) {
+    return 0;
+  }
+
+  const fromBuilding = roomBuilding(from.room_code);
+  const toBuilding = roomBuilding(to.room_code);
+  if (fromBuilding === toBuilding) {
+    return 1;
+  }
+
+  return movementZone(fromBuilding) === movementZone(toBuilding) ? 2 : 3;
+}
+
+function roomBuilding(roomCode: string): string {
+  const separator = roomCode.lastIndexOf("-");
+  return separator < 0 ? roomCode : roomCode.slice(separator + 1);
+}
+
+function movementZone(building: string): string {
+  if (building.includes("ĐHKHTN")) {
+    return "ĐHKHTN";
+  }
+
+  return MOVEMENT_ZONE_BY_BUILDING.get(building) ?? building;
+}
+
 function isSelectedSolution(value: unknown): boolean {
   return isRecord(value)
     && hasOnlyKeys(value, ["solution_index", "movement_cost", "desired_assignments"])
@@ -732,7 +884,8 @@ function isSelectedSolution(value: unknown): boolean {
     && Array.isArray(value.desired_assignments)
     && value.desired_assignments.length > 0
     && value.desired_assignments.every(isDesiredAssignmentSummary)
-    && hasUniqueRenderedSessionIds(value.desired_assignments as DesiredAnchorSummary[]);
+    && hasUniqueRenderedSessionIds(value.desired_assignments as DesiredAnchorSummary[])
+    && hasUniqueAnchorIdentities(value.desired_assignments as DesiredAnchorSummary[]);
 }
 
 function isSolverSummary(value: unknown): value is SolverSummaryShape {

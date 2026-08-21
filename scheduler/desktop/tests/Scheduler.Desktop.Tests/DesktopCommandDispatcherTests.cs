@@ -351,6 +351,68 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveTimetableRejectsDecreasingMovementCostOrder()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+
+        foreach (var desiredAssignments in new[]
+        {
+            timetable["desired_assignments"]!.AsArray(),
+            timetable["solutions"]!.AsArray()[0]!["desired_assignments"]!.AsArray(),
+        })
+        {
+            var desiredAssignment = desiredAssignments[0]!.AsObject();
+            desiredAssignment["session_count"] = 2;
+
+            var flatSession = JsonNode.Parse(
+                desiredAssignment["matched_sessions"]!.AsArray()[0]!.ToJsonString())!.AsObject();
+            flatSession["session_id"] = "row_2";
+            flatSession["source_row"] = 2;
+            flatSession["timeslot_label"] = "Thứ 2 Ca 2";
+            flatSession["period_code"] = "2";
+            flatSession["period_atomic"] = new JsonArray(JsonValue.Create("2"));
+            flatSession["room_code"] = "999-Z";
+            desiredAssignment["matched_sessions"]!.AsArray().Add(flatSession);
+
+            var schedule = desiredAssignment["lhp_schedules"]!.AsArray()[0]!.AsObject();
+            schedule["session_count"] = 2;
+            var nestedSession = JsonNode.Parse(
+                schedule["matched_sessions"]!.AsArray()[0]!.ToJsonString())!.AsObject();
+            nestedSession["session_id"] = "row_2";
+            nestedSession["source_row"] = 2;
+            nestedSession["timeslot_label"] = "Thứ 2 Ca 2";
+            nestedSession["period_code"] = "2";
+            nestedSession["period_atomic"] = new JsonArray(JsonValue.Create("2"));
+            nestedSession["room_code"] = "999-Z";
+            schedule["matched_sessions"]!.AsArray().Add(nestedSession);
+        }
+
+        var solutions = timetable["solutions"]!.AsArray();
+        solutions[0]!["movement_cost"] = 3;
+        var secondSolution = JsonNode.Parse(solutions[0]!.ToJsonString())!.AsObject();
+        secondSolution["solution_index"] = 2;
+        secondSolution["movement_cost"] = 0;
+        var secondAssignment = secondSolution["desired_assignments"]!.AsArray()[0]!.AsObject();
+        secondAssignment["matched_sessions"]!.AsArray()[1]!["room_code"] = "105-B";
+        secondAssignment["lhp_schedules"]!.AsArray()[0]!["matched_sessions"]!
+            .AsArray()[1]!["room_code"] = "105-B";
+        solutions.Add(secondSolution);
+        timetable["solver"]!.AsObject()["solution_count"] = 2;
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None));
+    }
+
+    [Fact]
     public async Task SaveTimetableRejectsNonJsonDestination()
     {
         var destination = Path.Combine(temporaryDirectory, "saved-timetable.txt");
@@ -701,6 +763,207 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
         secondSolution["desired_assignments"]!.AsArray()[0]!["course_name"] = "Khác";
         solutions.Add(secondSolution);
         timetable["solver"]!.AsObject()["solution_count"] = 2;
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SaveTimetableAcceptsValidAlternateSolutionPlacement()
+    {
+        var destination = Path.Combine(temporaryDirectory, "alternate.json");
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => destination);
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        var solutions = timetable["solutions"]!.AsArray();
+        var secondSolution = JsonNode.Parse(solutions[0]!.ToJsonString())!.AsObject();
+        secondSolution["solution_index"] = 2;
+        var secondDesiredAssignment = secondSolution["desired_assignments"]!.AsArray()[0]!.AsObject();
+        secondDesiredAssignment["matched_sessions"]!.AsArray()[0]!["room_code"] = "106-B";
+        secondDesiredAssignment["lhp_schedules"]!.AsArray()[0]!["matched_sessions"]!.AsArray()[0]!["room_code"] = "106-B";
+        solutions.Add(secondSolution);
+        timetable["solver"]!.AsObject()["solution_count"] = 2;
+
+        var result = await dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None);
+
+        Assert.True(result.GetProperty("saved").GetBoolean());
+        Assert.True(File.Exists(destination));
+    }
+
+    [Fact]
+    public async Task SaveTimetableRejectsPhysicalSessionsWithoutTiming()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        foreach (var desiredAssignments in new[]
+        {
+            timetable["desired_assignments"]!.AsArray(),
+            timetable["solutions"]!.AsArray()[0]!["desired_assignments"]!.AsArray(),
+        })
+        {
+            var desiredAssignment = desiredAssignments[0]!.AsObject();
+            foreach (var sessionNode in new JsonNode?[]
+            {
+                desiredAssignment["matched_sessions"]!.AsArray()[0],
+                desiredAssignment["lhp_schedules"]!.AsArray()[0]!["matched_sessions"]!.AsArray()[0],
+            })
+            {
+                sessionNode!["day"] = null;
+                sessionNode["period_code"] = null;
+                sessionNode["period_atomic"] = null;
+            }
+        }
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SaveTimetableRejectsBlankPhysicalRooms()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        foreach (var desiredAssignments in new[]
+        {
+            timetable["desired_assignments"]!.AsArray(),
+            timetable["solutions"]!.AsArray()[0]!["desired_assignments"]!.AsArray(),
+        })
+        {
+            var desiredAssignment = desiredAssignments[0]!.AsObject();
+            desiredAssignment["matched_sessions"]!.AsArray()[0]!["room_code"] = " ";
+            desiredAssignment["lhp_schedules"]!.AsArray()[0]!["matched_sessions"]!.AsArray()[0]!["room_code"] = " ";
+        }
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SaveTimetableAcceptsOnlineSessionsWithoutTiming()
+    {
+        var destination = Path.Combine(temporaryDirectory, "online.json");
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => destination);
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        foreach (var desiredAssignments in new[]
+        {
+            timetable["desired_assignments"]!.AsArray(),
+            timetable["solutions"]!.AsArray()[0]!["desired_assignments"]!.AsArray(),
+        })
+        {
+            var desiredAssignment = desiredAssignments[0]!.AsObject();
+            foreach (var sessionNode in new JsonNode?[]
+            {
+                desiredAssignment["matched_sessions"]!.AsArray()[0],
+                desiredAssignment["lhp_schedules"]!.AsArray()[0]!["matched_sessions"]!.AsArray()[0],
+            })
+            {
+                sessionNode!["session_type"] = "ONL";
+                sessionNode["room_code"] = "ONL";
+                sessionNode["day"] = null;
+                sessionNode["period_code"] = null;
+                sessionNode["period_atomic"] = null;
+            }
+        }
+
+        var result = await dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None);
+
+        Assert.True(result.GetProperty("saved").GetBoolean());
+    }
+
+    [Fact]
+    public async Task SaveTimetableRejectsDuplicateAnchorIdentities()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        var duplicate = JsonNode.Parse(timetable["desired_assignments"]!.AsArray()[0]!.ToJsonString())!.AsObject();
+        duplicate["matched_sessions"]!.AsArray()[0]!["session_id"] = "row_2";
+        duplicate["lhp_schedules"]!.AsArray()[0]!["matched_sessions"]!.AsArray()[0]!["session_id"] = "row_2";
+        timetable["desired_assignments"]!.AsArray().Add(duplicate);
+        timetable["solutions"]!.AsArray()[0]!["desired_assignments"]!.AsArray().Add(
+            JsonNode.Parse(duplicate.ToJsonString()));
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SaveTimetableRejectsDuplicateSolutionPlacements()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        var solutions = timetable["solutions"]!.AsArray();
+        var duplicate = JsonNode.Parse(solutions[0]!.ToJsonString())!.AsObject();
+        duplicate["solution_index"] = 2;
+        solutions.Add(duplicate);
+        timetable["solver"]!.AsObject()["solution_count"] = 2;
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SaveTimetableRejectsTamperedMovementCost()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        timetable["solutions"]!.AsArray()[0]!["movement_cost"] = 1;
 
         await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
             "save_timetable",

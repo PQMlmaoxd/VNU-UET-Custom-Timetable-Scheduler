@@ -216,7 +216,7 @@ export function periodSpan(session: SessionScheduleItem): { start: string; span:
 }
 
 export function sessionDetailId(sessionId: string): string {
-  return `session-${sessionId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  return `session-${encodeURIComponent(sessionId)}`;
 }
 
 export function formatMilliseconds(value: number): string {

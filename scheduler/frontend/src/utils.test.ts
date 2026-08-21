@@ -8,6 +8,7 @@ import {
   matchingCourses,
   normalizeText,
   normalizedLhpSchedules,
+  sessionDetailId,
 } from "./utils";
 
 describe("frontend helpers", () => {
@@ -43,6 +44,10 @@ describe("frontend helpers", () => {
     const json = new File(["{}"], "schedule.json", { type: "application/json" });
     expect(isSupportedTimetableFile(json, true)).toBe(true);
     expect(isSupportedTimetableFile(json, false)).toBe(true);
+  });
+
+  it("keeps punctuation variants in session IDs distinct", () => {
+    expect(sessionDetailId("a.b")).not.toBe(sessionDetailId("a/b"));
   });
 
   it("falls back to matched_sessions when lhp_schedules is missing", () => {
