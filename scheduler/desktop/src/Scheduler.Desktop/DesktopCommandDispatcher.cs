@@ -504,6 +504,8 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
             response.PrototypeCatalog is null ||
             response.ExistingScheduleValidation is null ||
             response.Solver is null ||
+            !IsWellFormedString(response.WorkbookPath) ||
+            !IsWellFormedString(response.Department) ||
             response.Solutions.IsDefaultOrEmpty ||
             response.Solver.Satisfiability != "SAT" ||
             response.Solver.SolutionCount != response.Solutions.Length ||
@@ -648,43 +650,42 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
 
     private static bool IsCompleteDesiredAnchor(DesktopResponseMapper.DesiredAnchorSummary anchor) =>
         anchor is not null &&
-        !string.IsNullOrWhiteSpace(anchor.CourseCode) &&
-        !string.IsNullOrWhiteSpace(anchor.TeachingTeamKey) &&
-        !string.IsNullOrWhiteSpace(anchor.TeachingTeamLabel) &&
-        !string.IsNullOrWhiteSpace(anchor.CourseName) &&
+        IsWellFormedString(anchor.CourseCode) && !string.IsNullOrWhiteSpace(anchor.CourseCode) &&
+        IsWellFormedString(anchor.TeachingTeamKey) && !string.IsNullOrWhiteSpace(anchor.TeachingTeamKey) &&
+        IsWellFormedString(anchor.TeachingTeamLabel) && !string.IsNullOrWhiteSpace(anchor.TeachingTeamLabel) &&
+        IsWellFormedString(anchor.CourseName) && !string.IsNullOrWhiteSpace(anchor.CourseName) &&
         anchor.SessionCount >= 0 &&
         !anchor.LhpCodes.IsDefault &&
         anchor.LhpCodes.Length > 0 &&
-        anchor.LhpCodes.All(code => !string.IsNullOrWhiteSpace(code)) &&
+        anchor.LhpCodes.All(code => IsWellFormedString(code) && !string.IsNullOrWhiteSpace(code)) &&
         !anchor.MatchedSessions.IsDefaultOrEmpty &&
         !anchor.LhpSchedules.IsDefaultOrEmpty &&
         anchor.MatchedSessions.All(IsCompleteSession) &&
         anchor.LhpSchedules.All(schedule =>
             schedule is not null &&
-            !string.IsNullOrWhiteSpace(schedule.LhpCode) &&
+            IsWellFormedString(schedule.LhpCode) && !string.IsNullOrWhiteSpace(schedule.LhpCode) &&
             !schedule.MatchedSessions.IsDefaultOrEmpty &&
             schedule.MatchedSessions.All(IsCompleteSession)) &&
         IsSemanticallyConsistentDesiredAnchor(anchor);
 
     private static bool IsCompleteSession(DesktopResponseMapper.SessionScheduleItem session) =>
         session is not null &&
-        IsWellFormedString(session.SessionId) &&
-        !string.IsNullOrWhiteSpace(session.SessionId) &&
-        !string.IsNullOrWhiteSpace(session.CourseCode) &&
-        session.CourseName is not null &&
-        !string.IsNullOrWhiteSpace(session.LhpCode) &&
-        session.SessionType is not null &&
-        session.TimeslotLabel is not null &&
-        !string.IsNullOrWhiteSpace(session.RoomCode) &&
+        IsWellFormedString(session.SessionId) && !string.IsNullOrWhiteSpace(session.SessionId) &&
+        IsWellFormedString(session.CourseCode) && !string.IsNullOrWhiteSpace(session.CourseCode) &&
+        IsWellFormedString(session.CourseName) &&
+        IsWellFormedString(session.LhpCode) && !string.IsNullOrWhiteSpace(session.LhpCode) &&
+        IsWellFormedString(session.SessionType) &&
+        IsWellFormedString(session.TimeslotLabel) &&
+        IsWellFormedString(session.RoomCode) && !string.IsNullOrWhiteSpace(session.RoomCode) &&
         session.RoomCode != "-" &&
         (session.SessionType == "ONL" ? session.RoomCode == "ONL" : session.RoomCode != "ONL") &&
         !session.LecturerNames.IsDefault &&
         !session.CohortCodes.IsDefault &&
-        session.LecturerNames.All(name => name is not null) &&
-        session.CohortCodes.All(cohort => cohort is not null) &&
+        session.LecturerNames.All(IsWellFormedString) &&
+        session.CohortCodes.All(IsWellFormedString) &&
         (session.PeriodAtomic is null ||
          (!session.PeriodAtomic.Value.IsDefault &&
-           session.PeriodAtomic.Value.All(atomic => atomic is not null))) &&
+            session.PeriodAtomic.Value.All(IsWellFormedString))) &&
         ValidSessionTypes.Contains(session.SessionType) &&
         IsValidSessionTiming(session);
 

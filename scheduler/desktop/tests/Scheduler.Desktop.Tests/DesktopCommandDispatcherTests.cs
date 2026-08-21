@@ -1106,6 +1106,36 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
             CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData("department")]
+    [InlineData("workbook_path")]
+    [InlineData("course_code")]
+    public async Task SaveTimetableRejectsMalformedResponseIdentifiers(string identifier)
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        if (identifier is "department" or "workbook_path")
+        {
+            timetable[identifier] = "\uFFFD";
+        }
+        else
+        {
+            timetable["desired_assignments"]!.AsArray()[0]!["course_code"] = "\uFFFD";
+            timetable["solutions"]!.AsArray()[0]!["desired_assignments"]!.AsArray()[0]!["course_code"] = "\uFFFD";
+        }
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None));
+    }
+
     [Fact]
     public async Task SolveWorkbookRejectsFatalScheduleGapBeforeStartingSolver()
     {
