@@ -95,8 +95,14 @@ support bundles to source control.
 - [ ] Upload a valid workbook, inspect fixed-schedule validation findings, and
       select a valid `(course_code, teaching_team_key)` request.
 - [ ] Solve successfully and verify each returned teaching unit has the requested
-      course and teaching team, no duplicated selection, and the displayed movement
-      cost matches the known fixture expectation.
+       course and teaching team, no duplicated selection, and the displayed movement
+       cost matches the known fixture expectation.
+- [ ] Save a SAT result with the native **Lưu thời khóa biểu (.json)** action. Confirm
+       the suggested `TKB-<department>-<yyyyMMdd-HHmm>.json` name, UTF-8 JSON output,
+       and that reopening the file goes directly to results without course selection.
+- [ ] Cancel the native Save dialog and confirm the result remains available, no file
+       is reported as saved, and the UI resumes only after the modal closes. Confirm
+       UNSAT/empty-solution results do not show the save action.
 - [ ] With an authorized UNSAT fixture, use `Xuất gói kiểm chứng UNSAT`, run the
       package's `verify-unsat.ps1` with the approved CaDiCaL and `cake_lpr` binaries,
       and record the exact `s VERIFIED UNSAT` output plus both executable hashes.

@@ -55,7 +55,8 @@ solutions returned by SAT; it does not claim global movement optimality.
 - `save_timetable` writes only SAT results with at least one solution to a versioned JSON
   document through the native Save dialog. Loading that document is a frontend-only path
   that opens the results view directly; XLSX and PDF files retain the validation,
-  course-selection, and solve flow.
+  course-selection, and solve flow. The native dialog's Cancel result is authoritative;
+  the UI remains busy until that modal closes and does not try to cancel it remotely.
 - `solve_workbook` is implemented through `PersonalSelectionService`; it materializes
   and independently validates every model before mapping the current `RescheduleResponse`
   shape. Its default adapter requires a packaged `SolverWorker.exe` beside the desktop

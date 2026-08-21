@@ -178,4 +178,21 @@ describe("saved timetable documents", () => {
       code: "invalid-timetable",
     });
   });
+
+  it("rejects more solutions than the bounded solver contract", () => {
+    const tooManySolutions = Array.from({ length: 6 }, (_, index) => ({
+      ...timetable.solutions[0],
+      solution_index: index + 1,
+    }));
+    const invalidTimetable = {
+      ...timetable,
+      solver: { ...timetable.solver, solution_count: tooManySolutions.length },
+      solutions: tooManySolutions,
+    };
+
+    expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+      ok: false,
+      code: "invalid-timetable",
+    });
+  });
 });

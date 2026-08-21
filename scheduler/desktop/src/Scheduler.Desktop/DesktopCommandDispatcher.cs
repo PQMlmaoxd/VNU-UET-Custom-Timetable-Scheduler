@@ -28,6 +28,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
     private const int MaxWorkbookBytes = 25 * 1024 * 1024;
     private const int MaxWorkbookBase64Characters = ((MaxWorkbookBytes + 2) / 3) * 4;
     private const int MaxTimetableDocumentBytes = 25 * 1024 * 1024;
+    private const int MaxTimetableSolutions = 5;
     private const int MaxDesiredAssignments = 100;
     private const int MaxAssignmentFieldCharacters = 512;
     private readonly Func<IPersonalSelectionSatSolver> createSolver;
@@ -447,9 +448,9 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         if (!solver.TryGetProperty("solution_count", out var solutionCount) ||
             solutionCount.ValueKind != JsonValueKind.Number ||
             !solutionCount.TryGetInt32(out var count) ||
-            count < 1)
+            count is < 1 or > MaxTimetableSolutions)
         {
-            throw new DesktopBridgeException("Kết quả thời khóa biểu không có phương án để lưu.");
+            throw new DesktopBridgeException($"Kết quả thời khóa biểu phải có từ 1 đến {MaxTimetableSolutions} phương án.");
         }
 
         if (!timetable.TryGetProperty("solutions", out var solutions) ||
@@ -482,16 +483,168 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
             response.Solutions.IsDefaultOrEmpty ||
             response.Solver.Satisfiability != "SAT" ||
             response.Solver.SolutionCount != response.Solutions.Length ||
+            !IsCompleteRescheduleResponse(response) ||
+            !HasSameJsonShape(
+                timetable,
+                JsonSerializer.SerializeToElement(response, SerializerOptions)) ||
             response.Solutions
                 .Select((solution, index) => (solution, index))
-                .Any(item =>
-                    item.solution is null ||
-                    item.solution.SolutionIndex != item.index + 1 ||
-                    item.solution.DesiredAssignments.IsDefault))
+                .Any(item => item.solution is null || item.solution.SolutionIndex != item.index + 1))
         {
             throw new DesktopBridgeException("Kết quả thời khóa biểu có cấu trúc không hợp lệ.");
         }
     }
+
+    private static bool IsCompleteRescheduleResponse(DesktopResponseMapper.RescheduleResponse response) =>
+        !response.DesiredAssignments.IsDefault &&
+        IsCompleteParseSummary(response.ParseSummary) &&
+        IsCompletePrototypeCatalog(response.PrototypeCatalog) &&
+        IsCompleteValidationSummary(response.ExistingScheduleValidation) &&
+        IsCompleteSolverSummary(response.Solver) &&
+        response.Solutions.All(solution =>
+            solution is not null &&
+            !solution.DesiredAssignments.IsDefault &&
+            solution.DesiredAssignments.All(IsCompleteDesiredAnchor)) &&
+         (response.SolvedScheduleValidation is null ||
+          IsCompleteValidationSummary(response.SolvedScheduleValidation));
+
+    private static bool HasSameJsonShape(JsonElement source, JsonElement expected)
+    {
+        if (source.ValueKind != expected.ValueKind)
+        {
+            return false;
+        }
+
+        if (source.ValueKind == JsonValueKind.Object)
+        {
+            var expectedProperties = expected.EnumerateObject().ToArray();
+            if (source.EnumerateObject().Count() != expectedProperties.Length)
+            {
+                return false;
+            }
+
+            return expectedProperties.All(property =>
+                source.TryGetProperty(property.Name, out var sourceValue) &&
+                HasSameJsonShape(sourceValue, property.Value));
+        }
+
+        if (source.ValueKind == JsonValueKind.Array)
+        {
+            if (source.GetArrayLength() != expected.GetArrayLength())
+            {
+                return false;
+            }
+
+            for (var index = 0; index < source.GetArrayLength(); index++)
+            {
+                if (!HasSameJsonShape(source[index], expected[index]))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsCompleteParseSummary(DesktopResponseMapper.ParseSummary summary) =>
+        summary.Sessions >= 0 &&
+        summary.SchedulableSessions >= 0 &&
+        summary.OnlineSessions >= 0 &&
+        summary.OtherDepartmentSessions >= 0 &&
+        summary.LecturerBlocks >= 0 &&
+        summary.AnchorCount >= 0 &&
+        summary.RequestedAssignments >= 0 &&
+        summary.Rooms >= 0 &&
+        summary.SkippedRows >= 0 &&
+        summary.FatalWarningCount >= 0 &&
+        summary.QuarantinedLhpCount >= 0 &&
+        summary.QuarantinedSessionCount >= 0 &&
+        !summary.Warnings.IsDefault &&
+        summary.Warnings.All(item => item is not null) &&
+        !summary.FatalWarnings.IsDefault &&
+        summary.FatalWarnings.All(item => item is not null) &&
+        !summary.QuarantinedOfferings.IsDefault &&
+        summary.QuarantinedOfferings.All(item =>
+            item is not null &&
+            item.CourseCode is not null &&
+            item.LhpCode is not null &&
+            item.ReasonCode is not null &&
+            item.QuarantinedRowCount >= 0 &&
+            item.ExcludedSessionCount >= 0 &&
+            !item.SourceLocations.IsDefault &&
+            item.SourceLocations.All(location => location is not null));
+
+    private static bool IsCompletePrototypeCatalog(DesktopResponseMapper.PrototypeCatalog catalog) =>
+        !catalog.Anchors.IsDefault &&
+        !catalog.RoomCostRules.IsDefault &&
+        catalog.Anchors.All(anchor =>
+            anchor is not null &&
+            anchor.CourseCode is not null &&
+            anchor.CourseName is not null &&
+            anchor.TeachingTeamKey is not null &&
+            anchor.TeachingTeamLabel is not null &&
+            anchor.SessionCount >= 0) &&
+        catalog.RoomCostRules.All(rule =>
+            rule is not null &&
+            rule.FromZone is not null &&
+            rule.ToZone is not null &&
+            rule.Description is not null);
+
+    private static bool IsCompleteValidationSummary(DesktopResponseMapper.ValidationSummary summary) =>
+        summary.ViolationCount >= 0 &&
+        summary.MissingSessionCount >= 0 &&
+        !summary.SampleViolations.IsDefault &&
+        summary.SampleViolations.All(item => item is not null);
+
+    private static bool IsCompleteSolverSummary(DesktopResponseMapper.SolverSummary solver) =>
+        solver.Backend is not null &&
+        solver.Status is "feasible" or "infeasible" or "timeout" &&
+        solver.Satisfiability is "SAT" or "UNSAT" or "UNKNOWN" &&
+        ((solver.Status == "feasible" && solver.Satisfiability == "SAT" && solver.SolutionCount > 0) ||
+         (solver.Status == "infeasible" && solver.Satisfiability == "UNSAT" && solver.SolutionCount == 0) ||
+         (solver.Status == "timeout" && solver.Satisfiability == "UNKNOWN" && solver.SolutionCount == 0)) &&
+        solver.SolveTimeMilliseconds >= 0 &&
+        (solver.ObjectiveValue is null || double.IsFinite(solver.ObjectiveValue.Value)) &&
+        solver.AssignmentCount >= 0 &&
+        solver.SolutionCount >= 0 &&
+        solver.SolverInfo is not null &&
+        !solver.Explanation.IsDefault &&
+        solver.Explanation.All(item => item is not null);
+
+    private static bool IsCompleteDesiredAnchor(DesktopResponseMapper.DesiredAnchorSummary anchor) =>
+        anchor is not null &&
+        anchor.CourseCode is not null &&
+        anchor.TeachingTeamKey is not null &&
+        anchor.TeachingTeamLabel is not null &&
+        anchor.CourseName is not null &&
+        !anchor.LhpCodes.IsDefault &&
+        anchor.LhpCodes.All(code => code is not null) &&
+        !anchor.MatchedSessions.IsDefault &&
+        !anchor.LhpSchedules.IsDefault &&
+        anchor.MatchedSessions.All(IsCompleteSession) &&
+        anchor.LhpSchedules.All(schedule =>
+            schedule is not null &&
+            schedule.LhpCode is not null &&
+            !schedule.MatchedSessions.IsDefault &&
+            schedule.MatchedSessions.All(IsCompleteSession));
+
+    private static bool IsCompleteSession(DesktopResponseMapper.SessionScheduleItem session) =>
+        session is not null &&
+        session.SessionId is not null &&
+        session.CourseCode is not null &&
+        session.CourseName is not null &&
+        session.LhpCode is not null &&
+        session.SessionType is not null &&
+        session.TimeslotLabel is not null &&
+        session.RoomCode is not null &&
+        !session.LecturerNames.IsDefault &&
+        !session.CohortCodes.IsDefault &&
+        session.LecturerNames.All(name => name is not null) &&
+        session.CohortCodes.All(cohort => cohort is not null) &&
+        (session.PeriodAtomic is null ||
+         (!session.PeriodAtomic.Value.IsDefault &&
+          session.PeriodAtomic.Value.All(atomic => atomic is not null)));
 
     private static string GetRequiredString(JsonElement element, string propertyName)
     {

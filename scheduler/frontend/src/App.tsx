@@ -76,7 +76,6 @@ function App() {
   const [elapsedMs, setElapsedMs] = useState(0);
   const solveCancellation = useRef<AbortController | null>(null);
   const exportCancellation = useRef<AbortController | null>(null);
-  const saveCancellation = useRef<AbortController | null>(null);
   const workbookCancellation = useRef<AbortController | null>(null);
   const validationRequest = useRef(0);
   const stageHeading = useRef<HTMLHeadingElement | null>(null);
@@ -149,8 +148,6 @@ function App() {
     solveCancellation.current = null;
     exportCancellation.current?.abort();
     exportCancellation.current = null;
-    saveCancellation.current?.abort();
-    saveCancellation.current = null;
     setIsExportingUnsat(false);
     setIsSavingTimetable(false);
     setFile(nextFile);
@@ -380,8 +377,6 @@ function App() {
     solveCancellation.current = null;
     exportCancellation.current?.abort();
     exportCancellation.current = null;
-    saveCancellation.current?.abort();
-    saveCancellation.current = null;
     setIsExportingUnsat(false);
     setIsSavingTimetable(false);
     setSolveResponse(null);
@@ -547,16 +542,12 @@ function App() {
       return;
     }
 
-    saveCancellation.current?.abort();
-    const cancellation = new AbortController();
-    saveCancellation.current = cancellation;
     setIsSavingTimetable(true);
     try {
       const sourceFileName = loadedDocument?.source_file_name ?? file?.name ?? response.workbook_path;
-      const result = await saveTimetableDocument(response, sourceFileName, cancellation.signal);
-      if (saveCancellation.current !== cancellation) {
-        return;
-      }
+      // SaveFileDialog owns cancellation. Its Cancel result is returned only after
+      // the native modal closes, so the UI cannot race a still-open dialog.
+      const result = await saveTimetableDocument(response, sourceFileName);
       if (!result.saved || !result.file_name) {
         setStatus({
           tone: "idle",
@@ -572,22 +563,13 @@ function App() {
         detail: COPY.results.savedTimetableDetail(result.file_name),
       });
     } catch (error) {
-      if (saveCancellation.current !== cancellation) {
-        return;
-      }
-      if (error instanceof DOMException && error.name === "AbortError") {
-        return;
-      }
       setStatus({
         tone: "error",
         title: COPY.results.saveErrorTitle,
         detail: userFacingError(error, COPY.results.saveErrorDetail),
       });
     } finally {
-      if (saveCancellation.current === cancellation) {
-        saveCancellation.current = null;
-        setIsSavingTimetable(false);
-      }
+      setIsSavingTimetable(false);
     }
   }
 

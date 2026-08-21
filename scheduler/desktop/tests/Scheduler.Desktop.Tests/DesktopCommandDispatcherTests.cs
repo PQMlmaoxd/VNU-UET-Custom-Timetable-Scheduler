@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.IO.Compression;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
@@ -265,6 +266,64 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
         await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
             "save_timetable",
             JsonSerializer.SerializeToElement(new { timetable = invalidTimetable }),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SaveTimetableRejectsMoreThanFiveSolutions()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var invalidTimetable = new
+        {
+            mode = "reschedule",
+            department = "CNTT",
+            solver = new { satisfiability = "SAT", solution_count = 6 },
+            solutions = Enumerable.Range(1, 6).Select(_ => new object()).ToArray(),
+        };
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable = invalidTimetable }),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SaveTimetableRejectsMissingRenderableResponseArrays()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        timetable.Remove("desired_assignments");
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SaveTimetableRejectsMissingNullableResponseProperty()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        timetable["solver"]!.AsObject().Remove("objective_value");
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
             CancellationToken.None));
     }
 

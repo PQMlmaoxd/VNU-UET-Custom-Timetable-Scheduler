@@ -145,6 +145,8 @@ PDF. Loading it skips validation and course selection and opens the results view
 directly. Loading XLSX or PDF continues to use the normal validation, selection,
 and solve workflow. JSON loading is frontend-only and therefore also works in the
 browser development build; saving requires the desktop bridge.
+Cancel the native Save dialog to leave the result unsaved; the desktop UI waits for
+that modal result rather than timing out or pretending it closed remotely.
 
 ## Manual Acceptance For An Official Installer
 

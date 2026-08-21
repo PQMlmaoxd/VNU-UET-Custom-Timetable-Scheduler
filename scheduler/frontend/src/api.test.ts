@@ -319,25 +319,6 @@ describe("desktop bridge API", () => {
     await expect(saveRequest).rejects.toThrow("Desktop bridge returned an invalid result.");
   });
 
-  it("cancels an active timetable save when the caller aborts", async () => {
-    const webView = new FakeDesktopWebView();
-    Object.defineProperty(window, "chrome", {
-      configurable: true,
-      value: { webview: webView },
-    });
-    const cancellation = new AbortController();
-    const saveRequest = saveTimetable({} as RescheduleResponse, "schedule.json", cancellation.signal);
-
-    await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
-    cancellation.abort();
-
-    await expect(saveRequest).rejects.toMatchObject({ name: "AbortError" });
-    expect(webView.messages[1]).toMatchObject({
-      method: "cancel_command",
-      payload: { target_id: (webView.messages[0] as { id: string }).id },
-    });
-  });
-
   it("cancels a desktop command when the bridge timeout expires", async () => {
     vi.useFakeTimers();
     const webView = new FakeDesktopWebView();

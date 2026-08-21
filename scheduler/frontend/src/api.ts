@@ -21,6 +21,7 @@ type DesktopBridgeResponse = {
 };
 
 const DESKTOP_BRIDGE_PROTOCOL_VERSION = 1;
+export const MAX_TIMETABLE_SOLUTIONS = 5;
 // The bridge transfers base64 JSON, which temporarily holds several copies of a file.
 // Keep the accepted desktop document size below the renderer memory budget.
 const MAX_WORKBOOK_BYTES = 25 * 1024 * 1024;
@@ -245,7 +246,6 @@ export async function exportUnsatArtifact(
 export async function saveTimetable(
   timetable: RescheduleResponse,
   sourceFileName: string,
-  signal?: AbortSignal,
 ): Promise<SaveTimetableResponse> {
   if (!getDesktopWebView()) {
     throw new Error("Lưu thời khóa biểu JSON chỉ khả dụng trong ứng dụng Desktop.");
@@ -254,7 +254,7 @@ export async function saveTimetable(
   return postDesktop<SaveTimetableResponse>("save_timetable", {
     timetable,
     source_file_name: sourceFileName,
-  }, signal, isSaveTimetableResponse, null);
+  }, undefined, isSaveTimetableResponse, null);
 }
 
 function isDesktopBridgeResponse(value: Record<string, unknown>): value is DesktopBridgeResponse {
@@ -319,6 +319,7 @@ export function isRescheduleResponse(value: unknown): value is RescheduleRespons
     && hasUniqueSolutionIndices
     && isSolverSummary(solver)
     && solver.solution_count === solutions.length
+    && solutions.length <= MAX_TIMETABLE_SOLUTIONS
     && (solver.satisfiability !== "SAT" || solutions.length > 0)
     && (solver.satisfiability !== "UNSAT" || solutions.length === 0)
     && (response.solved_schedule_validation === null || isValidationSummary(response.solved_schedule_validation));
@@ -342,6 +343,14 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
+function isInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value);
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return isInteger(value) && value >= 0;
+}
+
 function isParseSummary(value: unknown): boolean {
   if (!isRecord(value)) {
     return false;
@@ -360,7 +369,7 @@ function isParseSummary(value: unknown): boolean {
       "fatal_warning_count",
       "quarantined_lhp_count",
       "quarantined_session_count",
-    ].every((key) => typeof value[key] === "number" && Number.isInteger(value[key]) && value[key] >= 0);
+    ].every((key) => isNonNegativeInteger(value[key]));
 
   return numericFieldsValid
     && typeof value.partial_import === "boolean"
@@ -388,12 +397,12 @@ function isPrototypeCatalog(value: unknown): boolean {
       && typeof anchor.course_name === "string"
       && typeof anchor.teaching_team_key === "string"
       && typeof anchor.teaching_team_label === "string"
-      && typeof anchor.session_count === "number")
+      && isNonNegativeInteger(anchor.session_count))
     && Array.isArray(value.room_cost_rules)
     && value.room_cost_rules.every((rule) => isRecord(rule)
       && typeof rule.from_zone === "string"
       && typeof rule.to_zone === "string"
-      && typeof rule.cost === "number"
+      && isInteger(rule.cost)
       && typeof rule.description === "string");
 }
 
@@ -401,8 +410,8 @@ function isValidationSummary(value: unknown): boolean {
   return isRecord(value)
     && typeof value.is_valid === "boolean"
     && typeof value.is_complete === "boolean"
-    && typeof value.violation_count === "number"
-    && typeof value.missing_session_count === "number"
+    && isNonNegativeInteger(value.violation_count)
+    && isNonNegativeInteger(value.missing_session_count)
     && isStringArray(value.sample_violations);
 }
 
@@ -413,8 +422,8 @@ function isSessionScheduleItem(value: unknown): boolean {
     )
     && isStringArray(value.lecturer_names)
     && isStringArray(value.cohort_codes)
-    && typeof value.source_row === "number"
-    && (value.day === null || typeof value.day === "number")
+    && isInteger(value.source_row)
+    && (value.day === null || isInteger(value.day))
     && (value.period_code === null || typeof value.period_code === "string")
     && (value.period_atomic === null || isStringArray(value.period_atomic));
 }
@@ -424,21 +433,21 @@ function isDesiredAssignmentSummary(value: unknown): boolean {
     && ["course_code", "teaching_team_key", "teaching_team_label", "course_name"]
       .every((key) => typeof value[key] === "string")
     && isStringArray(value.lhp_codes)
-    && typeof value.session_count === "number"
+    && isNonNegativeInteger(value.session_count)
     && Array.isArray(value.matched_sessions)
     && value.matched_sessions.every(isSessionScheduleItem)
     && Array.isArray(value.lhp_schedules)
     && value.lhp_schedules.every((schedule) => isRecord(schedule)
       && typeof schedule.lhp_code === "string"
-      && typeof schedule.session_count === "number"
+      && isNonNegativeInteger(schedule.session_count)
       && Array.isArray(schedule.matched_sessions)
       && schedule.matched_sessions.every(isSessionScheduleItem));
 }
 
 function isSelectedSolution(value: unknown): boolean {
   return isRecord(value)
-    && typeof value.solution_index === "number"
-    && typeof value.movement_cost === "number"
+    && isInteger(value.solution_index)
+    && isInteger(value.movement_cost)
     && Array.isArray(value.desired_assignments)
     && value.desired_assignments.every(isDesiredAssignmentSummary);
 }
@@ -456,12 +465,10 @@ function isSolverSummary(value: unknown): value is SolverSummaryShape {
     && ["feasible", "infeasible", "timeout"].includes(status as string)
     && ["SAT", "UNSAT", "UNKNOWN"].includes(satisfiability as string)
     && typeof value.solver_info === "string"
-    && typeof value.solve_time_ms === "number"
-    && Number.isFinite(value.solve_time_ms)
-    && value.solve_time_ms >= 0
-    && (value.objective_value === null || typeof value.objective_value === "number")
-    && typeof assignmentCount === "number" && Number.isInteger(assignmentCount) && assignmentCount >= 0
-    && typeof solutionCount === "number" && Number.isInteger(solutionCount) && solutionCount >= 0
+    && isNonNegativeInteger(value.solve_time_ms)
+    && (value.objective_value === null || (typeof value.objective_value === "number" && Number.isFinite(value.objective_value)))
+    && isNonNegativeInteger(assignmentCount)
+    && isNonNegativeInteger(solutionCount)
     && isStringArray(value.explanation)
     && (value.formal_verification_token === null || typeof value.formal_verification_token === "string");
 
