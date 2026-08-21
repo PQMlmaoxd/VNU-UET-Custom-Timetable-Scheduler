@@ -497,6 +497,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
 
     private static bool IsCompleteRescheduleResponse(DesktopResponseMapper.RescheduleResponse response) =>
         !response.DesiredAssignments.IsDefaultOrEmpty &&
+        response.DesiredAssignments.All(IsCompleteDesiredAnchor) &&
         IsCompleteParseSummary(response.ParseSummary) &&
         IsCompletePrototypeCatalog(response.PrototypeCatalog) &&
         IsCompleteValidationSummary(response.ExistingScheduleValidation) &&
@@ -618,15 +619,16 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         anchor.TeachingTeamKey is not null &&
         anchor.TeachingTeamLabel is not null &&
         anchor.CourseName is not null &&
+        anchor.SessionCount >= 0 &&
         !anchor.LhpCodes.IsDefault &&
         anchor.LhpCodes.All(code => code is not null) &&
-        !anchor.MatchedSessions.IsDefault &&
-        !anchor.LhpSchedules.IsDefault &&
+        !anchor.MatchedSessions.IsDefaultOrEmpty &&
+        !anchor.LhpSchedules.IsDefaultOrEmpty &&
         anchor.MatchedSessions.All(IsCompleteSession) &&
         anchor.LhpSchedules.All(schedule =>
             schedule is not null &&
             schedule.LhpCode is not null &&
-            !schedule.MatchedSessions.IsDefault &&
+            !schedule.MatchedSessions.IsDefaultOrEmpty &&
             schedule.MatchedSessions.All(IsCompleteSession));
 
     private static bool IsCompleteSession(DesktopResponseMapper.SessionScheduleItem session) =>

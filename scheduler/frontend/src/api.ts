@@ -333,7 +333,6 @@ export function isRescheduleResponse(value: unknown): value is RescheduleRespons
   ])
     && response.mode === "reschedule"
     && Array.isArray(response.desired_assignments)
-    && response.desired_assignments.length > 0
     && response.desired_assignments.every(isDesiredAssignmentSummary)
     && Array.isArray(solutions)
     && solutions.every(isSelectedSolution)
@@ -341,6 +340,7 @@ export function isRescheduleResponse(value: unknown): value is RescheduleRespons
     && isSolverSummary(solver)
     && solver.solution_count === solutions.length
     && solutions.length <= MAX_TIMETABLE_SOLUTIONS
+    && (solver.satisfiability !== "SAT" || response.desired_assignments.length > 0)
     && (solver.satisfiability !== "SAT" || solutions.length > 0)
     && (solver.satisfiability !== "UNSAT" || solutions.length === 0)
     && (response.solved_schedule_validation === null || isValidationSummary(response.solved_schedule_validation));
@@ -374,7 +374,10 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 function isInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value);
+  return typeof value === "number"
+    && Number.isInteger(value)
+    && value >= -2147483648
+    && value <= 2147483647;
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
@@ -436,12 +439,8 @@ function isParseSummary(value: unknown): boolean {
       && typeof offering.lhp_code === "string"
       && typeof offering.reason_code === "string"
       && isStringArray(offering.source_locations)
-      && typeof offering.quarantined_row_count === "number"
-      && Number.isInteger(offering.quarantined_row_count)
-      && offering.quarantined_row_count >= 0
-      && typeof offering.excluded_session_count === "number"
-      && Number.isInteger(offering.excluded_session_count)
-      && offering.excluded_session_count >= 0);
+      && isNonNegativeInteger(offering.quarantined_row_count)
+      && isNonNegativeInteger(offering.excluded_session_count));
 }
 
 function isPrototypeCatalog(value: unknown): boolean {
@@ -531,13 +530,16 @@ function isDesiredAssignmentSummary(value: unknown): boolean {
     && isStringArray(value.lhp_codes)
     && isNonNegativeInteger(value.session_count)
     && Array.isArray(value.matched_sessions)
+    && value.matched_sessions.length > 0
     && value.matched_sessions.every(isSessionScheduleItem)
     && Array.isArray(value.lhp_schedules)
+    && value.lhp_schedules.length > 0
     && value.lhp_schedules.every((schedule) => isRecord(schedule)
       && hasOnlyKeys(schedule, ["lhp_code", "session_count", "matched_sessions"])
       && typeof schedule.lhp_code === "string"
       && isNonNegativeInteger(schedule.session_count)
       && Array.isArray(schedule.matched_sessions)
+      && schedule.matched_sessions.length > 0
       && schedule.matched_sessions.every(isSessionScheduleItem));
 }
 

@@ -159,6 +159,7 @@ describe("saved timetable documents", () => {
   it("rejects a non-SAT timetable", () => {
     const unsatTimetable = {
       ...timetable,
+      desired_assignments: [],
       solver: { ...timetable.solver, satisfiability: "UNSAT", status: "infeasible", solution_count: 0 },
       solutions: [],
     };
@@ -215,6 +216,18 @@ describe("saved timetable documents", () => {
     const invalidTimetable = {
       ...timetable,
       solver: { ...timetable.solver, extra: true },
+    };
+
+    expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+      ok: false,
+      code: "invalid-timetable",
+    });
+  });
+
+  it("rejects integer values outside the native response range", () => {
+    const invalidTimetable = {
+      ...timetable,
+      parse_summary: { ...timetable.parse_summary, sessions: 2147483648 },
     };
 
     expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({

@@ -44,6 +44,38 @@ const validateResponse = {
   },
 };
 
+const solveSessionOne = {
+  session_id: "row_1",
+  course_code: "INT2213",
+  course_name: "Mạng Máy Tính",
+  lhp_code: "INT2213-01",
+  session_type: "LT",
+  lecturer_names: ["Nguyễn A"],
+  cohort_codes: ["K69I"],
+  timeslot_label: "Thứ 2 Ca 1",
+  room_code: "105-B",
+  source_row: 1,
+  day: 2,
+  period_code: "1",
+  period_atomic: ["1"],
+};
+
+const solveSessionTwo = {
+  session_id: "row_2",
+  course_code: "INT2213",
+  course_name: "Mạng Máy Tính",
+  lhp_code: "INT2213-01",
+  session_type: "ONL",
+  lecturer_names: ["Nguyễn A"],
+  cohort_codes: ["K69I"],
+  timeslot_label: "Online",
+  room_code: "ONL",
+  source_row: 2,
+  day: null,
+  period_code: null,
+  period_atomic: null,
+};
+
 const solveDesiredAssignment = {
   course_code: "INT2213",
   course_name: "Mạng Máy Tính",
@@ -51,43 +83,12 @@ const solveDesiredAssignment = {
   teaching_team_label: "Nguyễn A",
   lhp_codes: ["INT2213-01"],
   session_count: 2,
-  matched_sessions: [],
+  matched_sessions: [solveSessionOne, solveSessionTwo],
   lhp_schedules: [
     {
       lhp_code: "INT2213-01",
       session_count: 2,
-      matched_sessions: [
-        {
-          session_id: "row_1",
-          course_code: "INT2213",
-          course_name: "Mạng Máy Tính",
-          lhp_code: "INT2213-01",
-          session_type: "LT",
-          lecturer_names: ["Nguyễn A"],
-          cohort_codes: ["K69I"],
-          timeslot_label: "Thứ 2 Ca 1",
-          room_code: "105-B",
-          source_row: 1,
-          day: 2,
-          period_code: "1",
-          period_atomic: ["1"],
-        },
-        {
-          session_id: "row_2",
-          course_code: "INT2213",
-          course_name: "Mạng Máy Tính",
-          lhp_code: "INT2213-01",
-          session_type: "ONL",
-          lecturer_names: ["Nguyễn A"],
-          cohort_codes: ["K69I"],
-          timeslot_label: "Online",
-          room_code: "ONL",
-          source_row: 2,
-          day: null,
-          period_code: null,
-          period_atomic: null,
-        },
-      ],
+      matched_sessions: [solveSessionOne, solveSessionTwo],
     },
   ],
 };

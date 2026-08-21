@@ -347,6 +347,33 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
             CancellationToken.None));
     }
 
+    [Fact]
+    public async Task SaveTimetableRejectsDesiredAssignmentsWithoutSessions()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        foreach (var desiredAssignments in new[]
+        {
+            timetable["desired_assignments"]!.AsArray(),
+            timetable["solutions"]!.AsArray()[0]!["desired_assignments"]!.AsArray(),
+        })
+        {
+            desiredAssignments[0]!["matched_sessions"] = new JsonArray();
+            desiredAssignments[0]!["lhp_schedules"]!.AsArray()[0]!["matched_sessions"] = new JsonArray();
+        }
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None));
+    }
+
     [Theory]
     [InlineData("UNSAT", 0)]
     [InlineData("UNKNOWN", 0)]

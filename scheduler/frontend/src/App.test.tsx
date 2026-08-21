@@ -134,6 +134,22 @@ function mockDesktopBridge(
   return webView;
 }
 
+const savedSession = {
+  session_id: "row_1",
+  course_code: "INT2213",
+  course_name: "Mạng Máy Tính",
+  lhp_code: "INT2213-01",
+  session_type: "LT",
+  lecturer_names: ["Nguyễn A"],
+  cohort_codes: ["K69I"],
+  timeslot_label: "Thứ 2 Ca 1",
+  room_code: "105-B",
+  source_row: 1,
+  day: 2,
+  period_code: "1",
+  period_atomic: ["1"],
+};
+
 const savedDesiredAssignment = {
   course_code: "INT2213",
   teaching_team_key: "team-nguyen-a",
@@ -141,25 +157,11 @@ const savedDesiredAssignment = {
   course_name: "Mạng Máy Tính",
   lhp_codes: ["INT2213-01"],
   session_count: 1,
-  matched_sessions: [],
+  matched_sessions: [savedSession],
   lhp_schedules: [{
     lhp_code: "INT2213-01",
     session_count: 1,
-    matched_sessions: [{
-      session_id: "row_1",
-      course_code: "INT2213",
-      course_name: "Mạng Máy Tính",
-      lhp_code: "INT2213-01",
-      session_type: "LT",
-      lecturer_names: ["Nguyễn A"],
-      cohort_codes: ["K69I"],
-      timeslot_label: "Thứ 2 Ca 1",
-      room_code: "105-B",
-      source_row: 1,
-      day: 2,
-      period_code: "1",
-      period_atomic: ["1"],
-    }],
+    matched_sessions: [savedSession],
   }],
 };
 

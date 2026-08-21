@@ -15,10 +15,12 @@
 03df83cd2690bec97d59c9842116d35e534713f8b0e2e346e964bceedc00eed1  ./scheduler/desktop/tests/Scheduler.Infrastructure.Xlsx.Tests/Scheduler.Infrastructure.Xlsx.Tests.csproj
 03ed634c2c0a656c826b8c79277f3e12bacfceb056eb593629af896b723ed82d  ./scheduler/desktop/src/Scheduler.Domain/packages.lock.json
 0475789cab2bd513c8a74654527e5c34041172ef8409681369fa6ca980f06e38  ./scheduler/frontend/src/features/results/ResultsPanel.tsx
+047be53c2535ef61f9aa460f1a152784c297c353f5206ad53a4d8ffb3a41a7f1  ./scheduler/desktop/tests/Scheduler.Desktop.Tests/DesktopCommandDispatcherTests.cs
 04e7190438412f8a9758c3797baf21350e7707623fe6988ed80ac972a61c5170  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/cnf/sqrt6889.sol
 059a690eb9c84f67518a4faabec162d86a83ed044914b39a23bc3972a93323a3  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/util.hpp
 05b321ce099bd1857342d107ce0ec28673c0e40da8780c0f8a720d42752c5197  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/cnf/sqrt2809.cnf
 05eeba09f09acc5992d0a24f897c349876d9b854950003a5695f1a00bfe07744  ./scheduler/frontend/src/timetableDocument.ts
+060c548b2dc99af568f4c5f0170e0429c021a469ff3ad5b9e9ae34fb5b3fdfe0  ./scheduler/desktop/src/Scheduler.Desktop/DesktopCommandDispatcher.cs
 06e3fe4a7a1884d20d81cc7065ca8cfd4c394ec602c4d180ddc39bbd4f7da521  ./scheduler/desktop/native/SolverWorker/third_party/cadical/VERSION
 073c7b696b03652b92573e969fcec7124d742854a89c39583b40bae079ee863b  ./scheduler/desktop/src/Scheduler.Desktop/MainWindow.xaml.cs
 07d1f67899ea9abc81940be7b1dfe2ba43b6bf203a5d08ca84d377c514330dee  ./scheduler/desktop/src/Scheduler.Infrastructure.FormalVerification/packages.lock.json
@@ -49,7 +51,6 @@
 0f9f5fd51e7361afc4a20097d4e63bcc06176a5150f0a22b2b88ea0b51944086  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/reluctant.hpp
 0fa5d2e3a9ba4bf7dc58d0805e0a746627b792ff3c78ff2e69cc8fdbccbc296d  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/proof.cpp
 0fe7f264eaac396b88519d427018d9f1aa402f6576f77ecccf0577d8dc3c2c6f  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/trace/reg0000.trace
-1007da5bc65184e743acd8b1847ac3941c0c7c1432ccee6d9c9bc944f5fcc15c  ./scheduler/frontend/src/App.test.tsx
 1033b44edf31e25942e7d7d5ae11ab35c66595a33a81ad9194dc9175c8d93968  ./scheduler/desktop/tests/Scheduler.Application.Tests/PersonalSelectionBuilderTests.cs
 1035a87420f9b2f5805f90cc478dad66109fc860230e5f3a904ce0cb9c708eb3  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/lidruptracer.cpp
 1153d1a935db86dac063cb70da6252414f2e286f4fd3dcf779dd6f97b5ce1ced  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/cnf/dimocheck.c
@@ -172,7 +173,6 @@
 395c4b5eee41aa8367452c2b4e9aae028d865494ef5d922308d9be58b646e1ab  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/ccadical.h
 3ac2913935a563b1c87b033e92af951fe3c1a7740f43dd1795216b06946ca697  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/usage/missing-clause.cnf
 3b7ba42aa6c18242614c243e88d8f67eaca4ac214497e2e165a94bbab950bb6c  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/instantiate.hpp
-3baca6c2462d5dfa2c8353642c5460d4c62bf44dcc553cdcee9826646339c1ba  ./scheduler/desktop/tests/Scheduler.Desktop.Tests/DesktopCommandDispatcherTests.cs
 3bc00488375ee29e92325333a0de901ee611a0bee8b0836487a4a7ef29c11c6d  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/signal.cpp
 3bc1192d489fdadc70c5721a3da70fee5d810f4a405f10d0d684f72f752e1a44  ./scheduler/desktop/scripts/run-solver-diagnostics.cmd
 3bde69fe14b3ee9bd7640772661b4d4f9953543ac412c6ad9e849b1366f5ec3e  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/queue.hpp
@@ -345,6 +345,7 @@
 75f2c41a1604e5819d3aae7ac41009b8eeb8fb1e8217f566691be38ceae0595b  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/trace/reg0002.trace
 7684ef6f3b6d2a72ecdee49d8cfc4f5be4f950262a35f5b1e5d9820b775afd75  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/condition.cpp
 768f1a1d255b155af73a1ef4dcdc1567b4d6c95a4dd1911032f30e1b2ecbfb76  ./scheduler/desktop/native/SolverWorker/third_party/cadical/.gitignore
+76bd5dd24f68f6bf7b58d2620e842b46326c7df84800095e9bb4aa6f95180125  ./scheduler/frontend/src/timetableDocument.test.ts
 76cfea0a71f8548c56a727a56efe03c1d380c051dc22414c745ad44b6bfdb788  ./scheduler/desktop/src/Scheduler.Desktop/Scheduler.Desktop.csproj
 76e64c027f542c82581fea5f234bc1b08660be34e628dd641ef4fe3025e8bfd1  ./scheduler/desktop/tests/Scheduler.Diagnostics.Tests/WorkbookDiagnosticsTests.cs
 77eac1f47e1fd6b4d0578e0a64c60d49011e7b651f773faf209be9d32e0b30cd  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/ema.hpp
@@ -419,7 +420,6 @@
 90e2bb41557488329c26ebd1e89f88c8275af06b32372edcc11e73cd459573ac  ./scheduler/desktop/src/Scheduler.Infrastructure.Timetable/TimetableParseResult.cs
 9157cc4cf83b4be44cc7851ce4654aa0e168988acf73aae85d24be3c01d1752f  ./scheduler/branding/README.md
 9163617a132531c7ee0eb9abbbab2add97c6870c4c0d5f121c95061f24ce6e2f  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/cnf/sqrt259081.sol
-92624705df7bae914a07533726da1d0b3d996f92f749474243ec87fe50c7b56f  ./scheduler/frontend/src/timetableDocument.test.ts
 92fc829470bcb137648233cf9fb332bc16b68618581b37db8f6c37019845e3c3  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/cnf/sat3.sol
 930254fb5f13909f8ea3008efa5ed0c885cf61c8f9da5939b89a717dd6289dd7  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/api/example_tracer.cpp
 932d2975a269fccf07291286da761c7012d3df92bbb8499b47b1c720b42e70f0  ./scheduler/desktop/src/Scheduler.Diagnostics/AppDiagnostics.cs
@@ -458,7 +458,6 @@
 9ba457fe96a1bbde421699642b8d0b10739dc5ae80277c36b3646b5fe5e9e704  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/cnf/sqrt63001.sol
 9bdd34fd3c383d7364e3c70e1b0015af2694523c411806e310ee082801d41b86  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/cnf/block0.cnf
 9bfe91458580236533c503d27ef5e5bdcfa10db8e8758ff140e00aefd137671c  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/trace/reg0003.trace
-9c02d0873b03753ba4dde745f678afc69197d31ad7d39f3af1ee915f61eb7348  ./scheduler/frontend/tests/e2e/app.spec.ts
 9c9f2bded60b4d5288ae46cda9e437421cad129e154b46394af8ba4991f44a26  ./scheduler/frontend/tsconfig.json
 9caaed67d8cd9d1c0744ad533b3ed95af756aa54c0402e38746be1f85a4e176c  ./scheduler/desktop/native/SolverWorker/third_party/cadical/LICENSE
 9ef0fd4b8ed91ea2f48ac51c2497eaa691ae690298c7402365841dbadcc4c919  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/trace/reg0027.trace
@@ -505,6 +504,7 @@ adad0a9acdedf8bdc37b10e9772292b9f7aa0feddcfd39e57b17e9a356048af5  ./scheduler/de
 adf770f1530361e5f69ee32f810dc643e867c964b6b83e2c22c031e8e4d5e64e  ./scheduler/desktop/native/FormalVerification/third_party/cake_lpr/experiments/satrace2019/grat_benchmark.sh
 ae449f7448769b7f856596faa2fe392fbd6f9f4369c82d0826e2e56dc2b76044  ./scheduler/desktop/native/FormalVerification/third_party/cake_lpr/experiments/results/pgbdd.csv
 ae58d61ede4f8a6cf1783e217503342c58f299da9f207ffb2481dc7daac9d7f5  ./.github/workflows/windows-debug.yml
+af27dc9ea3854b310e2c329c44e3c6e81d8453591a17d7d18593cd0d399db393  ./scheduler/frontend/tests/e2e/app.spec.ts
 b0223d532c9b6ff9f41c6257fd433fa91c5543b3fef9bf7780a58725b85df168  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/trace/reg0075.trace
 b044565d855915504e9d449c36899a7cf2c7b254ae3941633bdb332b665fbea7  ./scheduler/frontend/index.html
 b0cf6783c5b26f4b2c9e63a515205b23ab8c68bc97a3723b12c709e839232c47  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/trace/reg0063.trace
@@ -574,7 +574,6 @@ c3c8f003d0fb9f23729f7d992d75be5fb0da91536cbf131d6c66f62e6d4691fc  ./scheduler/de
 c3ca5607f5fc2a072444fcb3d3de8b25df3eb63465a2db7a5d6bef2273cacaf8  ./scheduler/desktop/native/FormalVerification/third_party/cake_lpr/experiments/results/README
 c456fd2014575052e3fb4557ec531fbe949ea5d75d75d3e3545a441da513f5d0  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/ternary.cpp
 c4dc6bad53f9cfc9aff34b893f303ced400250703a4b84c161c0b7373a720ec1  ./.gitmodules
-c53e660424fcae33df6e9bc484624f7e3881bd820a84d0f741c14976d5c48522  ./scheduler/desktop/src/Scheduler.Desktop/DesktopCommandDispatcher.cs
 c57b1cd3f1b1d9e8da1683676aa3613bd5209a6af1e217984ee1bd6ef7bddebc  ./scheduler/desktop/native/FormalVerification/third_party/cake_lpr/comproof/README
 c59ac5864723867627191539ed92d0f477f1c3f36abfc7225dfd03faaef99d66  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/restart.cpp
 c5e7479bc3eaab97a7a21bfb4eb27bb604294e6430320911cea7f34fd73b4b83  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/cnf/sqrt5041.sol
@@ -587,6 +586,7 @@ c842efafe9889c4b794459e6742e6d77a532b0d897e5d291b1d7d4592c491675  ./scheduler/de
 c8570ee0c844dee9659142e693bf79d25c21728fc646d65721c3f75d92ffc154  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/trace/reg0018.trace
 c8b6b21f0f632e5ff92db899e3f6b3f77fff06abcd81532eba95a3d159a09c1e  ./scheduler/desktop/native/SolverWorker/third_party/cadical/scripts/update-version.sh
 c91bbfc369c281ada9a73daadd8fe6d1b134ab06cfe3e091817f8faf8117f6fa  ./scheduler/desktop/native/FormalVerification/third_party/cake_lpr/experiments/sadical/README
+c9e0f3f3c2841cf0e53f0b29e18a50ded427d5696c14a6c745e33760d8bf69ce  ./scheduler/frontend/src/api.ts
 ca1a43fc9e4f8558e9d0129a1c94c8c85f7b09fc6122f84e234ebb590841fc3f  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/trace/reg0053.trace
 ca723a0a26198acb3f46181595afa968513b1ea213d0de75159d8764594d2de9  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/cnf/sqrt12769.cnf
 cc4dbb5f3b638d5704933dbed938390caa955cda1703218050f270a935c8c338  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/occs.hpp
@@ -625,7 +625,6 @@ d833a1fa46aa8974952e63d73ba777b4a51e6b1ae7ec6191848ecf2b60326a9a  ./scheduler/fr
 d837bc6410183dc163b022dd89b8f79431e66aca6ef1ea44348f8e0e321b4666  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/cnf/sat7.sol
 d8db50d096292719ef8fe93b579b6eaa731212a3c13293214019d4869c89ef3d  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/contract.cpp
 d9231948f3910d44b0069f2e1bda8b5908ed956d408461c20be7a9eea5c7f9ab  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/cnf/full2.cnf
-d9c8cb12615d6fe5ea92dc648dbbf8e780dab528a302cb97aeb9cfe822224100  ./scheduler/frontend/src/api.ts
 da3c8849cedbb1b6aeff299355dbb6ea5bc06ae202f2b1ae1773dfea6c3c4a0b  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/walk_full_occs.cpp
 da697f7b5715433189a04c07aaa9b2ce5c729e09dc853c2d9c8384f836ccb2e5  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/trace/reg0062.trace
 daae5970a2fed225a01931ddb8185c389f0cad8260e4cb29eeffd16c604fe0da  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/stats.cpp
@@ -695,6 +694,7 @@ f582daa9d4985a982af864921a5c31261608f66bc816ebf8534e37fd63b1859e  ./scheduler/de
 f5d108e5be9ea122e069a928413aa296c08f42bb1856e95e7ae85eb63fcf6431  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/cnf/unit0.sol
 f5ee31a766e68b7c16ecb294592a1115eaff0cf5f47d8f66524e044bd4c820b8  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/backward.cpp
 f60c33fe3463b53499723407d77085e054c52bc54125a9a51965c1e6a5ff88fe  ./scheduler/desktop/src/Scheduler.Application/TimetableValidator.cs
+f6246a3c34e3c9dae757176eebe31d0cbf0d1bebeb95d354ea323717fff2470b  ./scheduler/frontend/src/App.test.tsx
 f65fa57aef84fbcecdb8912429442c7209634c9b29e4d38ef5d52f921ca2d38b  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/trace/reg0022.trace
 f66843a2d7512ec378f4669d418d1c2ac952ec30aad428fa29cb789f1f126114  ./scheduler/desktop/native/SolverWorker/third_party/cadical/src/bins.cpp
 f6717ec8dd5131a283b677dbbdbda60ad1791a138162f27efd00f785e9b27b93  ./scheduler/desktop/native/SolverWorker/third_party/cadical/test/cnf/prime1369.sol
