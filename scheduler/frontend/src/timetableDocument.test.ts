@@ -377,6 +377,52 @@ describe("saved timetable documents", () => {
     });
   });
 
+  it("uses ordinal session IDs when recomputing movement cost", () => {
+    const firstSamePeriodSession = {
+      ...session,
+      session_id: "sheet_1_row_5",
+      source_row: 5,
+      room_code: "105-A",
+    };
+    const secondSamePeriodSession = {
+      ...session,
+      session_id: "sheet_10_row_5",
+      source_row: 5,
+      room_code: "201-G2",
+    };
+    const followingSession = {
+      ...session,
+      session_id: "sheet_2_row_6",
+      source_row: 6,
+      timeslot_label: "Thứ 2 Ca 2",
+      room_code: "202-G2",
+      period_code: "2",
+      period_atomic: ["2"],
+    };
+    const sessions = [firstSamePeriodSession, secondSamePeriodSession, followingSession];
+    const ordinalAssignment = {
+      ...desiredAssignment,
+      session_count: sessions.length,
+      matched_sessions: sessions,
+      lhp_schedules: [{
+        ...desiredAssignment.lhp_schedules[0],
+        session_count: sessions.length,
+        matched_sessions: sessions,
+      }],
+    };
+    const validTimetable = {
+      ...timetable,
+      desired_assignments: [ordinalAssignment],
+      solutions: [{
+        ...timetable.solutions[0],
+        movement_cost: 3,
+        desired_assignments: [ordinalAssignment],
+      }],
+    };
+
+    expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: validTimetable }))).ok).toBe(true);
+  });
+
   it("accepts a valid alternate solution placement with the same requested anchor", () => {
     const alternateSession = { ...session, room_code: "106-B" };
     const alternateAssignment = {

@@ -826,7 +826,7 @@ function calculateMovementCost(solution: SelectedSolutionItem): number {
       left.startPeriod - right.startPeriod
       || left.endPeriod - right.endPeriod
       || left.session.source_row - right.session.source_row
-      || left.session.session_id.localeCompare(right.session.session_id));
+      || compareOrdinal(left.session.session_id, right.session.session_id));
     for (let index = 1; index < ordered.length; index += 1) {
       const previous = ordered[index - 1];
       const current = ordered[index];
@@ -866,6 +866,18 @@ function transitionCost(
 function roomBuilding(roomCode: string): string {
   const separator = roomCode.lastIndexOf("-");
   return separator < 0 ? roomCode : roomCode.slice(separator + 1);
+}
+
+function compareOrdinal(left: string, right: string): number {
+  const length = Math.min(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = left.charCodeAt(index) - right.charCodeAt(index);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+
+  return left.length - right.length;
 }
 
 function movementZone(building: string): string {
