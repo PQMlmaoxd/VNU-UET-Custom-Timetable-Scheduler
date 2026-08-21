@@ -140,7 +140,7 @@ export function ResultsPanel({
           </div>
         )}
 
-        <ResultNotes response={response} />
+        <ResultNotes response={response} isLoadedDocument={isLoadedDocument} />
       </div>
 
       <aside className="card rail-card result-rail" aria-label={COPY.results.railLabel}>
@@ -391,12 +391,19 @@ function ResultDetails({ solution }: { solution: NonNullable<RescheduleResponse[
   );
 }
 
-function ResultNotes({ response }: { response: RescheduleResponse }) {
+function ResultNotes({
+  response,
+  isLoadedDocument,
+}: {
+  response: RescheduleResponse;
+  isLoadedDocument: boolean;
+}) {
   const notes = [
     ...response.solver.explanation,
     ...(response.solved_schedule_validation?.sample_violations ?? []),
   ];
   const visibleNotes = [
+    ...(isLoadedDocument ? [COPY.results.loadedJsonNonAuthoritativeDetail] : []),
     ...(response.parse_summary.partial_import && response.solver.satisfiability !== "UNSAT"
       ? [COPY.results.partialImportDetail(response.parse_summary.quarantined_lhp_count)]
       : []),

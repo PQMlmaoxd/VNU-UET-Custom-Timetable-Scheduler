@@ -256,6 +256,36 @@ describe("saved timetable documents", () => {
     });
   });
 
+  it("rejects session fields outside the renderable timetable domain", () => {
+    const invalidSessions = [
+      { ...session, session_type: "INVALID" },
+      { ...session, day: 99 },
+      { ...session, period_code: "5" },
+      { ...session, period_atomic: ["5"] },
+    ];
+
+    for (const invalidSession of invalidSessions) {
+      const invalidDesiredAssignment = {
+        ...desiredAssignment,
+        matched_sessions: [invalidSession],
+        lhp_schedules: [{
+          ...desiredAssignment.lhp_schedules[0],
+          matched_sessions: [invalidSession],
+        }],
+      };
+      const invalidTimetable = {
+        ...timetable,
+        desired_assignments: [invalidDesiredAssignment],
+        solutions: [{ ...timetable.solutions[0], desired_assignments: [invalidDesiredAssignment] }],
+      };
+
+      expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+        ok: false,
+        code: "invalid-timetable",
+      });
+    }
+  });
+
   it("rejects desired assignments whose session count disagrees with rendered sessions", () => {
     const invalidDesiredAssignment = { ...desiredAssignment, session_count: 2 };
     const invalidTimetable = {

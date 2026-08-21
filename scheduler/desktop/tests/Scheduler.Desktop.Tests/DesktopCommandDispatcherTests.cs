@@ -249,6 +249,54 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveTimetableRejectsSessionsOutsideRenderableDomain()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+
+        foreach (var invalidField in new[] { "session_type", "day", "period_code", "period_atomic" })
+        {
+            var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+            foreach (var desiredAssignments in new[]
+            {
+                timetable["desired_assignments"]!.AsArray(),
+                timetable["solutions"]!.AsArray()[0]!["desired_assignments"]!.AsArray(),
+            })
+            {
+                var desiredAssignment = desiredAssignments[0]!.AsObject();
+                SetInvalidSessionField(
+                    desiredAssignment["matched_sessions"]!.AsArray()[0]!.AsObject(),
+                    invalidField);
+                SetInvalidSessionField(
+                    desiredAssignment["lhp_schedules"]!.AsArray()[0]!["matched_sessions"]!.AsArray()[0]!.AsObject(),
+                    invalidField);
+            }
+
+            await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+                "save_timetable",
+                JsonSerializer.SerializeToElement(new { timetable }),
+                CancellationToken.None));
+        }
+
+        static void SetInvalidSessionField(JsonObject session, string field)
+        {
+            session[field] = field switch
+            {
+                "session_type" => JsonValue.Create("INVALID"),
+                "day" => JsonValue.Create(99),
+                "period_code" => JsonValue.Create("5"),
+                "period_atomic" => new JsonArray(JsonValue.Create("5")),
+                _ => throw new ArgumentOutOfRangeException(nameof(field), field, null),
+            };
+        }
+    }
+
+    [Fact]
     public async Task SaveTimetableRejectsNonJsonDestination()
     {
         var destination = Path.Combine(temporaryDirectory, "saved-timetable.txt");

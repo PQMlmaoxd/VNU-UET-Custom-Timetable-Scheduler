@@ -141,10 +141,13 @@ The results view can save a SAT timetable with at least one solution as a versio
 `.json` document. In the Windows desktop application, **Lưu thời khóa biểu (.json)**
 opens the native Save dialog and suggests `TKB-<department>-<yyyyMMdd-HHmm>.json`.
 The document contains the complete renderable result, not the source workbook or
-PDF. Loading it skips validation and course selection and opens the results view
-directly. Loading XLSX or PDF continues to use the normal validation, selection,
-and solve workflow. JSON loading is frontend-only and therefore also works in the
-browser development build; saving requires the desktop bridge.
+PDF. Loading it performs frontend schema and consistency validation, skips course
+selection, and opens the results view directly. It does not rerun workbook hard
+constraints or formal proof because the source workbook and proof artifacts are
+not embedded; treat the JSON as an editable, non-authoritative snapshot. Loading
+XLSX or PDF continues to use the normal validation, selection, and solve workflow.
+JSON loading is frontend-only and therefore also works in the browser development
+build; saving requires the desktop bridge.
 Cancel the native Save dialog to leave the result unsaved; the desktop UI waits for
 that modal result rather than timing out or pretending it closed remotely.
 

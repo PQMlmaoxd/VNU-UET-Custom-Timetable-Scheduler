@@ -34,9 +34,12 @@ PDFs are rejected rather than parsed heuristically.
 
 XLSX and PDF inputs follow the normal validation, course-selection, and solve
 workflow. A saved JSON timetable is already solved, so it opens directly in the
-results view. JSON loading is handled in the frontend and is also available in
-browser development mode; saving is a desktop-only action that opens a native
-Save dialog and writes `TKB-<department>-<yyyyMMdd-HHmm>.json` by default.
+results view after frontend schema and consistency validation. It is an editable,
+non-authoritative snapshot: loading JSON does not rerun workbook hard constraints
+or formal proof because the source workbook and proof artifacts are not embedded.
+JSON loading is handled in the frontend and is also available in browser
+development mode; saving is a desktop-only action that opens a native Save dialog
+and writes `TKB-<department>-<yyyyMMdd-HHmm>.json` by default.
 
 ## Movement Cost
 

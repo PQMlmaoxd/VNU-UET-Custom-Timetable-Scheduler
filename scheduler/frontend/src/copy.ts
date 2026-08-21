@@ -160,9 +160,11 @@ export const COPY = {
     saveCancelled: "Đã hủy lưu thời khóa biểu.",
     saveErrorTitle: "Không thể lưu thời khóa biểu",
     saveErrorDetail: "Hãy thử chọn vị trí lưu khác.",
+    saveTooLargeDetail: "Thời khóa biểu quá lớn để lưu thành JSON. Hãy thử với phạm vi thời khóa biểu ít dữ liệu hơn.",
     loadedSelectionTitle: "File JSON đã có sẵn thời khóa biểu",
     loadedSelectionDetail: "Không cần chọn môn. Quay lại bước kết quả để xem lịch.",
     loadedSelectionButton: "Xem thời khóa biểu",
+    loadedJsonNonAuthoritativeDetail: "File JSON đã được kiểm tra cấu trúc và tính nhất quán, nhưng không chạy lại ràng buộc thời khóa biểu hoặc chứng minh formal vì không kèm workbook gốc.",
     partialImportDetail: (count: number) =>
       `Kết quả chỉ bao gồm các LHP đủ dữ liệu; đã tạm loại ${count} LHP chưa công bố lịch.`,
     exportUnsat: "Xuất gói kiểm chứng UNSAT",

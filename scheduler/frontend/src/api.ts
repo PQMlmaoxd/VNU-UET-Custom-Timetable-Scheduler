@@ -29,6 +29,9 @@ export const MAX_DESKTOP_MESSAGE_CHARACTERS = 40 * 1024 * 1024;
 const MAX_WORKBOOK_BYTES = 25 * 1024 * 1024;
 const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
 const SOLVE_OVERHEAD_TIMEOUT_MS = 60_000;
+const VALID_SESSION_TYPES = new Set(["LT", "TH", "LT+TH", "TL+TH", "BT", "LT+BT", "ONL"]);
+const VALID_PERIOD_CODES = new Set(["1", "2", "3", "4", "1-2", "2-3", "3-4", "Sáng", "Chiều"]);
+const VALID_ATOMIC_PERIODS = new Set(["1", "2", "3", "4"]);
 
 type ResultValidator<T> = (value: unknown) => value is T;
 
@@ -52,6 +55,11 @@ function getDesktopWebView(): DesktopWebView | null {
 
 export function isDesktopApp(): boolean {
   return getDesktopWebView() !== null;
+}
+
+export function isTimetableTooLargeError(error: unknown): boolean {
+  const raw = error instanceof Error ? error.message : "";
+  return /too large|vượt quá giới hạn 25\s*(?:MB|MiB)/i.test(raw);
 }
 
 async function workbookPayload(
@@ -517,20 +525,39 @@ function isSessionScheduleItem(value: unknown): boolean {
       "period_atomic",
     ])
     && typeof value.course_code === "string"
-    && typeof value.course_name === "string"
-    && typeof value.lhp_code === "string"
-    && typeof value.session_type === "string"
-    && typeof value.timeslot_label === "string"
-    && typeof value.room_code === "string"
+     && typeof value.course_name === "string"
+     && typeof value.lhp_code === "string"
+     && typeof value.session_type === "string"
+     && VALID_SESSION_TYPES.has(value.session_type)
+     && typeof value.timeslot_label === "string"
+     && typeof value.room_code === "string"
     && isNonEmptyString(value.course_code)
     && isNonEmptyString(value.lhp_code)
     && isNonEmptyString(value.session_id)
     && isStringArray(value.lecturer_names)
     && isStringArray(value.cohort_codes)
-    && isInteger(value.source_row)
-    && (value.day === null || isInteger(value.day))
-    && (value.period_code === null || typeof value.period_code === "string")
-    && (value.period_atomic === null || isStringArray(value.period_atomic));
+     && isInteger(value.source_row)
+     && (value.day === null || isInteger(value.day))
+     && (value.period_code === null || typeof value.period_code === "string")
+     && (value.period_atomic === null || isStringArray(value.period_atomic))
+     && isValidSessionTiming(value);
+}
+
+function isValidSessionTiming(value: Record<string, unknown>): boolean {
+  const { day, period_code: periodCode, period_atomic: periodAtomic } = value;
+  if (day === null && periodCode === null && periodAtomic === null) {
+    return true;
+  }
+
+  return isInteger(day)
+    && day >= 2
+    && day <= 7
+    && typeof periodCode === "string"
+    && VALID_PERIOD_CODES.has(periodCode)
+    && isStringArray(periodAtomic)
+    && periodAtomic.length > 0
+    && new Set(periodAtomic).size === periodAtomic.length
+    && periodAtomic.every((period) => VALID_ATOMIC_PERIODS.has(period));
 }
 
 function isDesiredAssignmentSummary(value: unknown): boolean {
@@ -587,10 +614,12 @@ function isSemanticallyConsistentDesiredAssignment(anchor: DesiredAnchorSummary)
 }
 
 function sameStringSet(left: string[], right: string[]): boolean {
-  return left.length === right.length
-    && new Set(left).size === left.length
-    && new Set(right).size === right.length
-    && left.every((value) => right.includes(value));
+  const leftSet = new Set(left);
+  const rightSet = new Set(right);
+  return leftSet.size === left.length
+    && rightSet.size === right.length
+    && leftSet.size === rightSet.size
+    && left.every((value) => rightSet.has(value));
 }
 
 type SessionScheduleItem = DesiredAnchorSummary["matched_sessions"][number];

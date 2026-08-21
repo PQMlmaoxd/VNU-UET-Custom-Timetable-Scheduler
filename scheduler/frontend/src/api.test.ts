@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   exportUnsatArtifact,
   isRescheduleResponse,
+  isTimetableTooLargeError,
   MAX_DESKTOP_MESSAGE_CHARACTERS,
   notifyDesktopReady,
   saveTimetable,
@@ -158,6 +159,12 @@ afterEach(() => {
 describe("desktop bridge API", () => {
   it("accepts timed-out solve responses that contain partial solutions", () => {
     expect(isRescheduleResponse(partialTimeoutResponse)).toBe(true);
+  });
+
+  it("identifies oversized timetable errors without matching unrelated failures", () => {
+    expect(isTimetableTooLargeError(new Error("Desktop bridge request is too large."))).toBe(true);
+    expect(isTimetableTooLargeError(new Error("Thời khóa biểu JSON vượt quá giới hạn 25 MB."))).toBe(true);
+    expect(isTimetableTooLargeError(new Error("Hãy thử chọn vị trí lưu khác."))).toBe(false);
   });
 
   it("requires the desktop bridge for workbook operations", async () => {

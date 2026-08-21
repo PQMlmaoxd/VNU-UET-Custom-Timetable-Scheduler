@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   exportUnsatArtifact,
   isDesktopApp,
+  isTimetableTooLargeError,
   notifyDesktopReady,
   saveTimetable as saveTimetableDocument,
   setDesktopTheme,
@@ -577,7 +578,9 @@ function App() {
       setStatus({
         tone: "error",
         title: COPY.results.saveErrorTitle,
-        detail: userFacingError(error, COPY.results.saveErrorDetail),
+        detail: isTimetableTooLargeError(error)
+          ? COPY.results.saveTooLargeDetail
+          : userFacingError(error, COPY.results.saveErrorDetail),
       });
     } finally {
       if (saveRequest.current === requestId) {

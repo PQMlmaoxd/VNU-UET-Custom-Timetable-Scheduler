@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Globalization;
 using System.IO.Compression;
 using System.IO;
@@ -31,6 +32,18 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
     private const int MaxTimetableSolutions = 5;
     private const int MaxDesiredAssignments = 100;
     private const int MaxAssignmentFieldCharacters = 512;
+    private static readonly FrozenSet<string> ValidSessionTypes = new[]
+    {
+        "LT", "TH", "LT+TH", "TL+TH", "BT", "LT+BT", "ONL",
+    }.ToFrozenSet(StringComparer.Ordinal);
+    private static readonly FrozenSet<string> ValidPeriodCodes = new[]
+    {
+        "1", "2", "3", "4", "1-2", "2-3", "3-4", "Sáng", "Chiều",
+    }.ToFrozenSet(StringComparer.Ordinal);
+    private static readonly FrozenSet<string> ValidAtomicPeriods = new[]
+    {
+        "1", "2", "3", "4",
+    }.ToFrozenSet(StringComparer.Ordinal);
     private readonly Func<IPersonalSelectionSatSolver> createSolver;
     private readonly Func<string?> chooseFormalArtifactPath;
     private readonly Func<string, string?> chooseTimetablePath;
@@ -662,7 +675,31 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         session.CohortCodes.All(cohort => cohort is not null) &&
         (session.PeriodAtomic is null ||
          (!session.PeriodAtomic.Value.IsDefault &&
-           session.PeriodAtomic.Value.All(atomic => atomic is not null)));
+           session.PeriodAtomic.Value.All(atomic => atomic is not null))) &&
+        ValidSessionTypes.Contains(session.SessionType) &&
+        IsValidSessionTiming(session);
+
+    private static bool IsValidSessionTiming(DesktopResponseMapper.SessionScheduleItem session)
+    {
+        if (session.Day is null && session.PeriodCode is null && session.PeriodAtomic is null)
+        {
+            return true;
+        }
+
+        if (session.Day is null or < 2 or > 7 ||
+            session.PeriodCode is null ||
+            !ValidPeriodCodes.Contains(session.PeriodCode) ||
+            session.PeriodAtomic is null)
+        {
+            return false;
+        }
+
+        var atomicPeriods = session.PeriodAtomic.Value;
+        return !atomicPeriods.IsDefault &&
+               !atomicPeriods.IsEmpty &&
+               atomicPeriods.Distinct(StringComparer.Ordinal).Count() == atomicPeriods.Length &&
+               atomicPeriods.All(ValidAtomicPeriods.Contains);
+    }
 
     private static bool IsSemanticallyConsistentDesiredAnchor(
         DesktopResponseMapper.DesiredAnchorSummary anchor)
@@ -692,10 +729,11 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
     {
         var leftValues = left.ToArray();
         var rightValues = right.ToArray();
-        return leftValues.Length == rightValues.Length &&
-               leftValues.Distinct(StringComparer.Ordinal).Count() == leftValues.Length &&
-               rightValues.Distinct(StringComparer.Ordinal).Count() == rightValues.Length &&
-               leftValues.All(value => rightValues.Contains(value, StringComparer.Ordinal));
+        var leftSet = leftValues.ToFrozenSet(StringComparer.Ordinal);
+        var rightSet = rightValues.ToFrozenSet(StringComparer.Ordinal);
+        return leftSet.Count == leftValues.Length &&
+               rightSet.Count == rightValues.Length &&
+               leftSet.SetEquals(rightSet);
     }
 
     private static bool AreEquivalentSessionCollections(

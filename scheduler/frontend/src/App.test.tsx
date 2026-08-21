@@ -18,6 +18,7 @@ class FakeDesktopWebView {
     private readonly autoRespond: boolean,
     private readonly response: unknown = workbookResponse,
     private readonly commandResults: Record<string, unknown> = {},
+    private readonly commandErrors: Record<string, string> = {},
   ) {}
 
   addEventListener(_event: "message", listener: (event: MessageEvent<unknown>) => void) {
@@ -32,6 +33,12 @@ class FakeDesktopWebView {
     this.messages.push(message);
     const request = message as DesktopMessage;
     if (!this.autoRespond) {
+      return;
+    }
+
+    const error = this.commandErrors[request.method];
+    if (error) {
+      this.respond({ protocol_version: 1, id: request.id, ok: false, error });
       return;
     }
 
@@ -125,8 +132,9 @@ function mockDesktopBridge(
   autoRespond = true,
   response: unknown = workbookResponse,
   commandResults: Record<string, unknown> = {},
+  commandErrors: Record<string, string> = {},
 ) {
-  const webView = new FakeDesktopWebView(autoRespond, response, commandResults);
+  const webView = new FakeDesktopWebView(autoRespond, response, commandResults, commandErrors);
   Object.defineProperty(window, "chrome", {
     configurable: true,
     value: { webview: webView },
@@ -280,6 +288,7 @@ describe("App", () => {
     expect(screen.queryByRole("heading", { name: COPY.selection.heading })).not.toBeInTheDocument();
     expect(screen.queryByText(COPY.results.loadedSelectionDetail)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /INT2213, INT2213-01/ })).toBeInTheDocument();
+    expect(screen.getByText(COPY.results.loadedJsonNonAuthoritativeDetail)).toBeInTheDocument();
   });
 
   it("shows partial-import details when a SAT JSON timetable is reopened", async () => {
@@ -347,6 +356,23 @@ describe("App", () => {
     };
     expect(request.method).toBe("save_timetable");
     expect(request.payload.source_file_name).toBe("timetable.xlsx");
+  });
+
+  it("shows a size-specific error when the desktop bridge rejects a large timetable", async () => {
+    const user = userEvent.setup();
+    mockDesktopBridge(true, workbookResponse, {}, {
+      save_timetable: "Thời khóa biểu JSON vượt quá giới hạn 25 MB.",
+    });
+    render(<App />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, makeSavedTimetableFile());
+    await user.click(screen.getByRole("button", { name: COPY.upload.readButton }));
+    await screen.findByRole("heading", { name: COPY.results.validHeading });
+    await user.click(screen.getByRole("button", { name: COPY.results.saveTimetable }));
+
+    await waitFor(() => expect(screen.getByText(COPY.results.saveTooLargeDetail)).toBeInTheDocument());
+    expect(screen.queryByText(COPY.results.saveErrorDetail)).not.toBeInTheDocument();
   });
 
   it("ignores a stale save response after choosing another file", async () => {
