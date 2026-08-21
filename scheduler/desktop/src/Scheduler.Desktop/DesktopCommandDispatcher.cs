@@ -668,6 +668,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
 
     private static bool IsCompleteSession(DesktopResponseMapper.SessionScheduleItem session) =>
         session is not null &&
+        IsWellFormedString(session.SessionId) &&
         !string.IsNullOrWhiteSpace(session.SessionId) &&
         !string.IsNullOrWhiteSpace(session.CourseCode) &&
         session.CourseName is not null &&
@@ -686,6 +687,39 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
            session.PeriodAtomic.Value.All(atomic => atomic is not null))) &&
         ValidSessionTypes.Contains(session.SessionType) &&
         IsValidSessionTiming(session);
+
+    private static bool IsWellFormedString(string? value)
+    {
+        if (value is null)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < value.Length; index++)
+        {
+            var codeUnit = value[index];
+            if (codeUnit == '\uFFFD')
+            {
+                return false;
+            }
+
+            if (char.IsHighSurrogate(codeUnit))
+            {
+                if (index + 1 >= value.Length || !char.IsLowSurrogate(value[index + 1]))
+                {
+                    return false;
+                }
+
+                index++;
+            }
+            else if (char.IsLowSurrogate(codeUnit))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     private static bool IsValidSessionTiming(DesktopResponseMapper.SessionScheduleItem session)
     {

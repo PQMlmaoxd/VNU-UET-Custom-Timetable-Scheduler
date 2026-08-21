@@ -1000,6 +1000,36 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveTimetableRejectsMalformedUtf16SessionIds()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        using var responseDocument = JsonDocument.Parse(response.GetRawText());
+        var originalSessionId = responseDocument.RootElement
+            .GetProperty("desired_assignments")[0]
+            .GetProperty("matched_sessions")[0]
+            .GetProperty("session_id")
+            .GetString();
+        var serializedOriginalSessionId = JsonSerializer.Serialize(originalSessionId);
+        var invalidTimetableJson = response.GetRawText().Replace(
+            serializedOriginalSessionId,
+            "\"\\uD800\"",
+            StringComparison.Ordinal);
+        using var invalidPayload = JsonDocument.Parse(
+            "{\"timetable\":" + invalidTimetableJson + ",\"source_file_name\":\"source.xlsx\"}");
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            invalidPayload.RootElement,
+            CancellationToken.None));
+    }
+
+    [Fact]
     public async Task SaveTimetableRejectsDuplicateRenderedSessionIds()
     {
         var dispatcher = new DesktopCommandDispatcher(

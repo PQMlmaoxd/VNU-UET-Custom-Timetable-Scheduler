@@ -639,6 +639,28 @@ describe("saved timetable documents", () => {
     });
   });
 
+  it("rejects malformed UTF-16 session IDs", () => {
+    const invalidSession = { ...session, session_id: String.fromCharCode(0xD800) };
+    const invalidDesiredAssignment = {
+      ...desiredAssignment,
+      matched_sessions: [invalidSession],
+      lhp_schedules: [{
+        ...desiredAssignment.lhp_schedules[0],
+        matched_sessions: [invalidSession],
+      }],
+    };
+    const invalidTimetable = {
+      ...timetable,
+      desired_assignments: [invalidDesiredAssignment],
+      solutions: [{ ...timetable.solutions[0], desired_assignments: [invalidDesiredAssignment] }],
+    };
+
+    expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+      ok: false,
+      code: "invalid-timetable",
+    });
+  });
+
   it("rejects duplicate rendered session IDs", () => {
     const duplicateSession = { ...session };
     const invalidDesiredAssignment = {
