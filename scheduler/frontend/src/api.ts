@@ -1,5 +1,6 @@
 import type {
   DesiredAssignmentPayload,
+  DesiredAnchorSummary,
   RescheduleResponse,
   SaveTimetableResponse,
   ValidateExistingResponse,
@@ -22,6 +23,7 @@ type DesktopBridgeResponse = {
 
 const DESKTOP_BRIDGE_PROTOCOL_VERSION = 1;
 export const MAX_TIMETABLE_SOLUTIONS = 5;
+export const MAX_DESKTOP_MESSAGE_CHARACTERS = 40 * 1024 * 1024;
 // The bridge transfers base64 JSON, which temporarily holds several copies of a file.
 // Keep the accepted desktop document size below the renderer memory budget.
 const MAX_WORKBOOK_BYTES = 25 * 1024 * 1024;
@@ -99,6 +101,17 @@ async function postDesktop<T>(
   const desktopWebView: DesktopWebView = webView;
 
   const id = crypto.randomUUID();
+  const requestMessage = {
+    protocol_version: DESKTOP_BRIDGE_PROTOCOL_VERSION,
+    id,
+    method,
+    payload,
+  };
+  const serializedRequest = JSON.stringify(requestMessage);
+  if (serializedRequest.length > MAX_DESKTOP_MESSAGE_CHARACTERS) {
+    throw new Error("Desktop bridge request is too large.");
+  }
+
   return new Promise<T>((resolve, reject) => {
     let settled = false;
 
@@ -175,12 +188,7 @@ async function postDesktop<T>(
 
     desktopWebView.addEventListener("message", onMessage);
     signal?.addEventListener("abort", onAbort, { once: true });
-    desktopWebView.postMessage({
-      protocol_version: DESKTOP_BRIDGE_PROTOCOL_VERSION,
-      id,
-      method,
-      payload,
-    });
+    desktopWebView.postMessage(requestMessage);
   });
 }
 
@@ -337,6 +345,8 @@ export function isRescheduleResponse(value: unknown): value is RescheduleRespons
     && Array.isArray(solutions)
     && solutions.every(isSelectedSolution)
     && hasUniqueSolutionIndices
+    && (response.desired_assignments.length === 0
+      || hasUniqueRenderedSessionIds(response.desired_assignments as DesiredAnchorSummary[]))
     && isSolverSummary(solver)
     && solver.solution_count === solutions.length
     && solutions.length <= MAX_TIMETABLE_SOLUTIONS
@@ -502,9 +512,10 @@ function isSessionScheduleItem(value: unknown): boolean {
       "period_code",
       "period_atomic",
     ])
-    && ["session_id", "course_code", "course_name", "lhp_code", "session_type", "timeslot_label", "room_code"].every(
+    && ["course_code", "course_name", "lhp_code", "session_type", "timeslot_label", "room_code"].every(
       (key) => typeof value[key] === "string",
     )
+    && isNonEmptyString(value.session_id)
     && isStringArray(value.lecturer_names)
     && isStringArray(value.cohort_codes)
     && isInteger(value.source_row)
@@ -540,7 +551,14 @@ function isDesiredAssignmentSummary(value: unknown): boolean {
       && isNonNegativeInteger(schedule.session_count)
       && Array.isArray(schedule.matched_sessions)
       && schedule.matched_sessions.length > 0
+      && schedule.session_count === schedule.matched_sessions.length
       && schedule.matched_sessions.every(isSessionScheduleItem));
+}
+
+function hasUniqueRenderedSessionIds(desiredAssignments: DesiredAnchorSummary[]): boolean {
+  const sessionIds = desiredAssignments.flatMap((anchor) =>
+    anchor.lhp_schedules.flatMap((schedule) => schedule.matched_sessions.map((session) => session.session_id)));
+  return new Set(sessionIds).size === sessionIds.length;
 }
 
 function isSelectedSolution(value: unknown): boolean {
@@ -550,7 +568,8 @@ function isSelectedSolution(value: unknown): boolean {
     && isInteger(value.movement_cost)
     && Array.isArray(value.desired_assignments)
     && value.desired_assignments.length > 0
-    && value.desired_assignments.every(isDesiredAssignmentSummary);
+    && value.desired_assignments.every(isDesiredAssignmentSummary)
+    && hasUniqueRenderedSessionIds(value.desired_assignments as DesiredAnchorSummary[]);
 }
 
 function isSolverSummary(value: unknown): value is SolverSummaryShape {
@@ -591,7 +610,10 @@ function isSolverSummary(value: unknown): value is SolverSummaryShape {
 
   return (status === "feasible" && satisfiability === "SAT" && solutionCount > 0)
     || (status === "infeasible" && satisfiability === "UNSAT" && solutionCount === 0)
-    || (status === "timeout" && satisfiability === "UNKNOWN" && solutionCount === 0);
+    || (status === "timeout"
+      && satisfiability === "UNKNOWN"
+      && solutionCount >= 0
+      && solutionCount <= MAX_TIMETABLE_SOLUTIONS);
 }
 
 export async function setDesktopTheme(preference: ThemePreference): Promise<void> {

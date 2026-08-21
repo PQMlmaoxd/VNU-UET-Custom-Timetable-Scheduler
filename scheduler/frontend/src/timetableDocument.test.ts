@@ -235,4 +235,70 @@ describe("saved timetable documents", () => {
       code: "invalid-timetable",
     });
   });
+
+  it("rejects LHP schedules whose session count does not match their sessions", () => {
+    const invalidDesiredAssignment = {
+      ...desiredAssignment,
+      lhp_schedules: desiredAssignment.lhp_schedules.map((schedule) => ({
+        ...schedule,
+        session_count: 0,
+      })),
+    };
+    const invalidTimetable = {
+      ...timetable,
+      desired_assignments: [invalidDesiredAssignment],
+      solutions: [{ ...timetable.solutions[0], desired_assignments: [invalidDesiredAssignment] }],
+    };
+
+    expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+      ok: false,
+      code: "invalid-timetable",
+    });
+  });
+
+  it("rejects blank session IDs", () => {
+    const invalidSession = { ...session, session_id: " " };
+    const invalidDesiredAssignment = {
+      ...desiredAssignment,
+      matched_sessions: [invalidSession],
+      lhp_schedules: [{
+        ...desiredAssignment.lhp_schedules[0],
+        matched_sessions: [invalidSession],
+      }],
+    };
+    const invalidTimetable = {
+      ...timetable,
+      desired_assignments: [invalidDesiredAssignment],
+      solutions: [{ ...timetable.solutions[0], desired_assignments: [invalidDesiredAssignment] }],
+    };
+
+    expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+      ok: false,
+      code: "invalid-timetable",
+    });
+  });
+
+  it("rejects duplicate rendered session IDs", () => {
+    const duplicateSession = { ...session };
+    const invalidDesiredAssignment = {
+      ...desiredAssignment,
+      session_count: 2,
+      matched_sessions: [session, duplicateSession],
+      lhp_schedules: [{
+        ...desiredAssignment.lhp_schedules[0],
+        session_count: 2,
+        matched_sessions: [session, duplicateSession],
+      }],
+    };
+    const invalidTimetable = {
+      ...timetable,
+      desired_assignments: [invalidDesiredAssignment],
+      solutions: [{ ...timetable.solutions[0], desired_assignments: [invalidDesiredAssignment] }],
+    };
+
+    expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+      ok: false,
+      code: "invalid-timetable",
+    });
+  });
 });

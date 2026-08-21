@@ -374,6 +374,93 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
             CancellationToken.None));
     }
 
+    [Fact]
+    public async Task SaveTimetableRejectsMismatchedLhpScheduleSessionCount()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        foreach (var desiredAssignments in new[]
+        {
+            timetable["desired_assignments"]!.AsArray(),
+            timetable["solutions"]!.AsArray()[0]!["desired_assignments"]!.AsArray(),
+        })
+        {
+            desiredAssignments[0]!["lhp_schedules"]!.AsArray()[0]!["session_count"] = 2;
+        }
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SaveTimetableRejectsBlankSessionIds()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        foreach (var desiredAssignments in new[]
+        {
+            timetable["desired_assignments"]!.AsArray(),
+            timetable["solutions"]!.AsArray()[0]!["desired_assignments"]!.AsArray(),
+        })
+        {
+            desiredAssignments[0]!["matched_sessions"]!.AsArray()[0]!["session_id"] = " ";
+            desiredAssignments[0]!["lhp_schedules"]!.AsArray()[0]!["matched_sessions"]!.AsArray()[0]!["session_id"] =
+                " ";
+        }
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SaveTimetableRejectsDuplicateRenderedSessionIds()
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        foreach (var desiredAssignments in new[]
+        {
+            timetable["desired_assignments"]!.AsArray(),
+            timetable["solutions"]!.AsArray()[0]!["desired_assignments"]!.AsArray(),
+        })
+        {
+            var desiredAssignment = desiredAssignments[0]!.AsObject();
+            desiredAssignment["session_count"] = 2;
+            var matchedSessions = desiredAssignment["matched_sessions"]!.AsArray();
+            matchedSessions.Add(JsonNode.Parse(matchedSessions[0]!.ToJsonString()));
+            var lhpSchedule = desiredAssignment["lhp_schedules"]!.AsArray()[0]!.AsObject();
+            lhpSchedule["session_count"] = 2;
+            lhpSchedule["matched_sessions"]!.AsArray().Add(
+                JsonNode.Parse(lhpSchedule["matched_sessions"]!.AsArray()[0]!.ToJsonString()));
+        }
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None));
+    }
+
     [Theory]
     [InlineData("UNSAT", 0)]
     [InlineData("UNKNOWN", 0)]

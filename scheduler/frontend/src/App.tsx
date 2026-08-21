@@ -78,6 +78,7 @@ function App() {
   const exportCancellation = useRef<AbortController | null>(null);
   const workbookCancellation = useRef<AbortController | null>(null);
   const validationRequest = useRef(0);
+  const saveRequest = useRef(0);
   const stageHeading = useRef<HTMLHeadingElement | null>(null);
   const hasNotifiedDesktopReady = useRef(false);
 
@@ -142,6 +143,7 @@ function App() {
 
   function resetWorkbookState(nextFile: File | null) {
     validationRequest.current += 1;
+    saveRequest.current += 1;
     workbookCancellation.current?.abort();
     workbookCancellation.current = null;
     solveCancellation.current?.abort();
@@ -373,6 +375,7 @@ function App() {
   }
 
   function resetSolveOnly() {
+    saveRequest.current += 1;
     solveCancellation.current?.abort();
     solveCancellation.current = null;
     exportCancellation.current?.abort();
@@ -542,12 +545,17 @@ function App() {
       return;
     }
 
+    const requestId = saveRequest.current + 1;
+    saveRequest.current = requestId;
     setIsSavingTimetable(true);
     try {
       const sourceFileName = loadedDocument?.source_file_name ?? file?.name ?? response.workbook_path;
       // SaveFileDialog owns cancellation. Its Cancel result is returned only after
       // the native modal closes, so the UI cannot race a still-open dialog.
       const result = await saveTimetableDocument(response, sourceFileName);
+      if (saveRequest.current !== requestId) {
+        return;
+      }
       if (!result.saved || !result.file_name) {
         setStatus({
           tone: "idle",
@@ -563,13 +571,18 @@ function App() {
         detail: COPY.results.savedTimetableDetail(result.file_name),
       });
     } catch (error) {
+      if (saveRequest.current !== requestId) {
+        return;
+      }
       setStatus({
         tone: "error",
         title: COPY.results.saveErrorTitle,
         detail: userFacingError(error, COPY.results.saveErrorDetail),
       });
     } finally {
-      setIsSavingTimetable(false);
+      if (saveRequest.current === requestId) {
+        setIsSavingTimetable(false);
+      }
     }
   }
 

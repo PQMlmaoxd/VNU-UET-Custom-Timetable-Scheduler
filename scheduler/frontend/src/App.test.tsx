@@ -329,6 +329,35 @@ describe("App", () => {
     expect(request.payload.source_file_name).toBe("timetable.xlsx");
   });
 
+  it("ignores a stale save response after choosing another file", async () => {
+    const user = userEvent.setup();
+    const webView = mockDesktopBridge(false);
+    render(<App />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, makeSavedTimetableFile());
+    await user.click(screen.getByRole("button", { name: COPY.upload.readButton }));
+    await screen.findByRole("heading", { name: COPY.results.validHeading });
+    await user.click(screen.getByRole("button", { name: COPY.results.saveTimetable }));
+
+    await waitFor(() => {
+      expect(webView.messages.some((message) => (message as DesktopMessage).method === "save_timetable")).toBe(true);
+    });
+    const saveRequest = webView.messages.find(
+      (message) => (message as DesktopMessage).method === "save_timetable",
+    ) as DesktopMessage;
+    await user.click(screen.getByRole("button", { name: COPY.results.chooseAnotherFile }));
+    webView.respond({
+      protocol_version: 1,
+      id: saveRequest.id,
+      ok: true,
+      result: { saved: true, file_name: "stale.json" },
+    });
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: COPY.upload.heading })).toBeInTheDocument());
+    expect(screen.queryByText(COPY.results.savedTimetableDetail("stale.json"))).not.toBeInTheDocument();
+  });
+
   it("does not show the desktop save action in browser mode", async () => {
     const user = userEvent.setup();
     render(<App />);

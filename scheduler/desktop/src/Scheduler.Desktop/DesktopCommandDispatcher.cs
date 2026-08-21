@@ -484,6 +484,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
             response.Solver.Satisfiability != "SAT" ||
             response.Solver.SolutionCount != response.Solutions.Length ||
             !IsCompleteRescheduleResponse(response) ||
+            !HasConsistentLhpScheduleCounts(timetable) ||
             !HasSameJsonShape(
                 timetable,
                 JsonSerializer.SerializeToElement(response, SerializerOptions)) ||
@@ -498,6 +499,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
     private static bool IsCompleteRescheduleResponse(DesktopResponseMapper.RescheduleResponse response) =>
         !response.DesiredAssignments.IsDefaultOrEmpty &&
         response.DesiredAssignments.All(IsCompleteDesiredAnchor) &&
+        HasUniqueRenderedSessionIds(response.DesiredAssignments) &&
         IsCompleteParseSummary(response.ParseSummary) &&
         IsCompletePrototypeCatalog(response.PrototypeCatalog) &&
         IsCompleteValidationSummary(response.ExistingScheduleValidation) &&
@@ -505,9 +507,10 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         response.Solutions.All(solution =>
             solution is not null &&
             !solution.DesiredAssignments.IsDefaultOrEmpty &&
-            solution.DesiredAssignments.All(IsCompleteDesiredAnchor)) &&
-         (response.SolvedScheduleValidation is null ||
-          IsCompleteValidationSummary(response.SolvedScheduleValidation));
+            solution.DesiredAssignments.All(IsCompleteDesiredAnchor) &&
+            HasUniqueRenderedSessionIds(solution.DesiredAssignments)) &&
+        (response.SolvedScheduleValidation is null ||
+         IsCompleteValidationSummary(response.SolvedScheduleValidation));
 
     private static bool HasSameJsonShape(JsonElement source, JsonElement expected)
     {
@@ -604,7 +607,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         solver.Satisfiability is "SAT" or "UNSAT" or "UNKNOWN" &&
         ((solver.Status == "feasible" && solver.Satisfiability == "SAT" && solver.SolutionCount > 0) ||
          (solver.Status == "infeasible" && solver.Satisfiability == "UNSAT" && solver.SolutionCount == 0) ||
-         (solver.Status == "timeout" && solver.Satisfiability == "UNKNOWN" && solver.SolutionCount == 0)) &&
+         (solver.Status == "timeout" && solver.Satisfiability == "UNKNOWN" && solver.SolutionCount is >= 0 and <= MaxTimetableSolutions)) &&
         solver.SolveTimeMilliseconds >= 0 &&
         (solver.ObjectiveValue is null || double.IsFinite(solver.ObjectiveValue.Value)) &&
         solver.AssignmentCount >= 0 &&
@@ -633,7 +636,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
 
     private static bool IsCompleteSession(DesktopResponseMapper.SessionScheduleItem session) =>
         session is not null &&
-        session.SessionId is not null &&
+        !string.IsNullOrWhiteSpace(session.SessionId) &&
         session.CourseCode is not null &&
         session.CourseName is not null &&
         session.LhpCode is not null &&
@@ -647,6 +650,54 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         (session.PeriodAtomic is null ||
          (!session.PeriodAtomic.Value.IsDefault &&
           session.PeriodAtomic.Value.All(atomic => atomic is not null)));
+
+    private static bool HasUniqueRenderedSessionIds(
+        IEnumerable<DesktopResponseMapper.DesiredAnchorSummary> desiredAssignments)
+    {
+        var sessionIds = desiredAssignments
+            .SelectMany(anchor => anchor.LhpSchedules)
+            .SelectMany(schedule => schedule.MatchedSessions)
+            .Select(session => session.SessionId)
+            .ToArray();
+        return sessionIds.Length == sessionIds.Distinct(StringComparer.Ordinal).Count();
+    }
+
+    private static bool HasConsistentLhpScheduleCounts(JsonElement timetable) =>
+        HasConsistentDesiredAssignmentCounts(timetable, "desired_assignments") &&
+        timetable.TryGetProperty("solutions", out var solutions) &&
+        solutions.ValueKind == JsonValueKind.Array &&
+        solutions.EnumerateArray().All(solution =>
+            HasConsistentDesiredAssignmentCounts(solution, "desired_assignments"));
+
+    private static bool HasConsistentDesiredAssignmentCounts(JsonElement parent, string propertyName)
+    {
+        if (parent.ValueKind != JsonValueKind.Object ||
+            !parent.TryGetProperty(propertyName, out var desiredAssignments) ||
+            desiredAssignments.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        return desiredAssignments.EnumerateArray().All(HasConsistentDesiredLhpScheduleCounts);
+    }
+
+    private static bool HasConsistentDesiredLhpScheduleCounts(JsonElement desiredAssignment)
+    {
+        if (desiredAssignment.ValueKind != JsonValueKind.Object ||
+            !desiredAssignment.TryGetProperty("lhp_schedules", out var schedules) ||
+            schedules.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        return schedules.EnumerateArray().All(schedule =>
+            schedule.ValueKind == JsonValueKind.Object &&
+            schedule.TryGetProperty("session_count", out var sessionCount) &&
+            sessionCount.TryGetInt32(out var count) &&
+            schedule.TryGetProperty("matched_sessions", out var matchedSessions) &&
+            matchedSessions.ValueKind == JsonValueKind.Array &&
+            count == matchedSessions.GetArrayLength());
+    }
 
     private static string GetRequiredString(JsonElement element, string propertyName)
     {

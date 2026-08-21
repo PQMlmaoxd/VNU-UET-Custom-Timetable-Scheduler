@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   exportUnsatArtifact,
+  isRescheduleResponse,
+  MAX_DESKTOP_MESSAGE_CHARACTERS,
   notifyDesktopReady,
   saveTimetable,
   setDesktopTheme,
@@ -87,6 +89,62 @@ const validateResponse = {
   },
 };
 
+const partialTimeoutSession = {
+  session_id: "row_1",
+  course_code: "INT1000",
+  course_name: "Programming",
+  lhp_code: "LHP-1",
+  session_type: "LT",
+  lecturer_names: ["Alice"],
+  cohort_codes: ["K69I"],
+  timeslot_label: "Thứ 2 Ca 1",
+  room_code: "101-A",
+  source_row: 1,
+  day: 2,
+  period_code: "1",
+  period_atomic: ["1"],
+};
+
+const partialTimeoutAssignment = {
+  course_code: "INT1000",
+  teaching_team_key: "team-alice",
+  teaching_team_label: "Alice",
+  course_name: "Programming",
+  lhp_codes: ["LHP-1"],
+  session_count: 1,
+  matched_sessions: [partialTimeoutSession],
+  lhp_schedules: [{
+    lhp_code: "LHP-1",
+    session_count: 1,
+    matched_sessions: [partialTimeoutSession],
+  }],
+};
+
+const partialTimeoutResponse = {
+  ...validateResponse,
+  mode: "reschedule",
+  department: "CNTT",
+  desired_assignments: [partialTimeoutAssignment],
+  solutions: [{
+    solution_index: 1,
+    movement_cost: 0,
+    desired_assignments: [partialTimeoutAssignment],
+  }],
+  solver: {
+    backend: "personal_sat",
+    status: "timeout",
+    satisfiability: "UNKNOWN",
+    solve_time_ms: 30_000,
+    objective_value: null,
+    assignment_count: 1,
+    solution_count: 1,
+    solver_info: "fixture",
+    explanation: ["Tìm lịch đã hết thời gian cho phép."],
+    formal_verification_token: null,
+  },
+  solved_schedule_validation: null,
+};
+
 afterEach(() => {
   vi.restoreAllMocks();
   if (originalChrome) {
@@ -98,6 +156,10 @@ afterEach(() => {
 });
 
 describe("desktop bridge API", () => {
+  it("accepts timed-out solve responses that contain partial solutions", () => {
+    expect(isRescheduleResponse(partialTimeoutResponse)).toBe(true);
+  });
+
   it("requires the desktop bridge for workbook operations", async () => {
     const workbook = {
       name: "schedule.xlsx",
@@ -435,6 +497,26 @@ describe("desktop bridge API", () => {
 
     await expect(validateWorkbook(workbook)).rejects.toThrow("25 MB");
     expect(workbook.arrayBuffer).not.toHaveBeenCalled();
+    expect(webView.messages).toHaveLength(0);
+  });
+
+  it("rejects oversized bridge requests before posting them", async () => {
+    const webView = new FakeDesktopWebView();
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: webView },
+    });
+    const originalStringify = JSON.stringify.bind(JSON);
+    vi.spyOn(JSON, "stringify").mockImplementation((value) => {
+      if (typeof value === "object" && value !== null
+        && (value as { method?: unknown }).method === "save_timetable") {
+        return { length: MAX_DESKTOP_MESSAGE_CHARACTERS + 1 } as unknown as string;
+      }
+      return originalStringify(value);
+    });
+
+    await expect(saveTimetable({} as RescheduleResponse, "schedule.json"))
+      .rejects.toThrow("Desktop bridge request is too large.");
     expect(webView.messages).toHaveLength(0);
   });
 });
