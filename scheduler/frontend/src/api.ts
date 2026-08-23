@@ -18,8 +18,8 @@ type DesktopBridgeResponse = {
   protocol_version: number;
   id: string;
   ok: boolean;
-  result?: unknown;
-  error?: string | null;
+  result: unknown | null;
+  error: string | null;
 };
 
 const DESKTOP_BRIDGE_PROTOCOL_VERSION = 1;
@@ -296,10 +296,16 @@ export async function saveTimetable(
 }
 
 function isDesktopBridgeResponse(value: Record<string, unknown>): value is DesktopBridgeResponse {
-  return typeof value.protocol_version === "number"
-    && isWellFormedString(value.id)
-    && typeof value.ok === "boolean"
-    && (value.error === undefined || value.error === null || isWellFormedString(value.error));
+  if (!hasOnlyKeys(value, ["protocol_version", "id", "ok", "result", "error"])
+    || !isInteger(value.protocol_version)
+    || !isWellFormedString(value.id)
+    || typeof value.ok !== "boolean") {
+    return false;
+  }
+
+  return value.ok
+    ? value.result !== null && value.error === null
+    : value.result === null && isNonEmptyString(value.error);
 }
 
 function parseDesktopBridgeMessage(value: unknown): Record<string, unknown> | null {
@@ -395,13 +401,28 @@ export function isRescheduleResponse(value: unknown): value is RescheduleRespons
 }
 
 function isUnsatArtifactExportResponse(value: unknown): value is UnsatArtifactExportResponse {
-  return isRecord(value) && typeof value.exported === "boolean";
+  if (!isRecord(value)
+    || !hasOnlyKeys(value, ["exported", "file_name", "cnf_sha256", "variable_count", "clause_count"])
+    || typeof value.exported !== "boolean") {
+    return false;
+  }
+
+  return value.exported
+    ? isNonEmptyString(value.file_name)
+      && isSha256(value.cnf_sha256)
+      && isNonNegativeInteger(value.variable_count)
+      && isNonNegativeInteger(value.clause_count)
+    : value.file_name === null
+      && value.cnf_sha256 === null
+      && value.variable_count === null
+      && value.clause_count === null;
 }
 
 function isSaveTimetableResponse(value: unknown): value is SaveTimetableResponse {
   return isRecord(value)
+    && hasOnlyKeys(value, ["saved", "file_name"])
     && typeof value.saved === "boolean"
-    && (value.file_name === null || isWellFormedString(value.file_name));
+    && (value.saved ? isNonEmptyString(value.file_name) : value.file_name === null);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -410,6 +431,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNonEmptyString(value: unknown): value is string {
   return isWellFormedString(value) && value.trim().length > 0;
+}
+
+function isSha256(value: unknown): value is string {
+  return isWellFormedString(value) && /^[0-9A-F]{64}$/.test(value);
 }
 
 export function isWellFormedString(value: unknown): value is string {

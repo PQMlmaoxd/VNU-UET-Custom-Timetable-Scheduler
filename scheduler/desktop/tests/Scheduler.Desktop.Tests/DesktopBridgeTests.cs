@@ -31,6 +31,10 @@ public sealed class DesktopBridgeTests
         Assert.Equal("request-1", document.RootElement.GetProperty("id").GetString());
         Assert.True(document.RootElement.GetProperty("ok").GetBoolean());
         Assert.Equal("validate_workbook", document.RootElement.GetProperty("result").GetProperty("method").GetString());
+        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("error").ValueKind);
+        Assert.Equal(
+            ["error", "id", "ok", "protocol_version", "result"],
+            document.RootElement.EnumerateObject().Select(property => property.Name).Order().ToArray());
     }
 
     [Fact]
@@ -42,7 +46,11 @@ public sealed class DesktopBridgeTests
 
         using var document = JsonDocument.Parse(response);
         Assert.False(document.RootElement.GetProperty("ok").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("result").ValueKind);
         Assert.Contains("Unsupported desktop bridge protocol version", document.RootElement.GetProperty("error").GetString());
+        Assert.Equal(
+            ["error", "id", "ok", "protocol_version", "result"],
+            document.RootElement.EnumerateObject().Select(property => property.Name).Order().ToArray());
     }
 
     [Fact]
@@ -61,7 +69,8 @@ public sealed class DesktopBridgeTests
     [Fact]
     public async Task HandleAsyncRejectsOversizedResponsesWithTheRequestCorrelationId()
     {
-        var bridge = new DesktopBridgeSession(new LargeResultDispatcher());
+        var logger = new RecordingActivityLogger();
+        var bridge = new DesktopBridgeSession(new LargeResultDispatcher(), logger);
         var response = await bridge.HandleAsync(
             """{"protocol_version":1,"id":"request-1","method":"validate_workbook","payload":{}}""");
 
@@ -70,6 +79,92 @@ public sealed class DesktopBridgeTests
         Assert.Equal("request-1", document.RootElement.GetProperty("id").GetString());
         Assert.Equal("Desktop bridge response is too large.", document.RootElement.GetProperty("error").GetString());
         Assert.True(response.Length <= DesktopBridgeSession.MaximumMessageCharacters);
+        Assert.Equal("rejected", Assert.Single(logger.Activities).Outcome);
+    }
+
+    [Fact]
+    public async Task HandleAsyncBoundsPreValidationRequestIdsInResponsesAndActivity()
+    {
+        var logger = new RecordingActivityLogger();
+        var bridge = new DesktopBridgeSession(new RecordingDispatcher(), logger);
+        var oversizedId = new string('i', DesktopBridgeSession.MaximumMessageCharacters - 100);
+        var request = JsonSerializer.Serialize(new
+        {
+            protocol_version = 1,
+            id = oversizedId,
+            method = "validate_workbook",
+            payload = new { },
+        });
+        Assert.True(request.Length <= DesktopBridgeSession.MaximumMessageCharacters);
+
+        var response = await bridge.HandleAsync(request);
+
+        using var document = JsonDocument.Parse(response);
+        Assert.False(document.RootElement.GetProperty("ok").GetBoolean());
+        Assert.Equal(string.Empty, document.RootElement.GetProperty("id").GetString());
+        Assert.Contains("request ID", document.RootElement.GetProperty("error").GetString());
+        Assert.True(response.Length <= DesktopBridgeSession.MaximumMessageCharacters);
+        Assert.Equal("invalid", Assert.Single(logger.Activities).CorrelationId);
+    }
+
+    [Fact]
+    public async Task HandleAsyncBoundsOversizedErrorResponsesWithTheRequestCorrelationId()
+    {
+        var bridge = new DesktopBridgeSession(new LargeErrorDispatcher());
+
+        var response = await bridge.HandleAsync(
+            """{"protocol_version":1,"id":"request-1","method":"validate_workbook","payload":{}}""");
+
+        using var document = JsonDocument.Parse(response);
+        Assert.False(document.RootElement.GetProperty("ok").GetBoolean());
+        Assert.Equal("request-1", document.RootElement.GetProperty("id").GetString());
+        Assert.Equal("Desktop bridge response is too large.", document.RootElement.GetProperty("error").GetString());
+        Assert.True(response.Length <= DesktopBridgeSession.MaximumMessageCharacters);
+    }
+
+    [Fact]
+    public async Task HandleAsyncRejectsMalformedRequestMetadataWithoutLoggingIt()
+    {
+        var logger = new RecordingActivityLogger();
+        var bridge = new DesktopBridgeSession(new RecordingDispatcher(), logger);
+
+        var response = await bridge.HandleAsync(
+            """{"protocol_version":1,"id":"\uFFFD","method":"validate_workbook","payload":{}}""");
+
+        using var document = JsonDocument.Parse(response);
+        Assert.False(document.RootElement.GetProperty("ok").GetBoolean());
+        Assert.Equal(string.Empty, document.RootElement.GetProperty("id").GetString());
+        Assert.Equal("invalid", Assert.Single(logger.Activities).CorrelationId);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("\uFFFD")]
+    public async Task HandleAsyncRejectsMalformedMethodsWithoutDispatch(string? method)
+    {
+        var dispatcher = new RecordingDispatcher();
+        var bridge = new DesktopBridgeSession(dispatcher);
+        var request = $"{{\"protocol_version\":1,\"id\":\"request-1\",\"method\":{JsonSerializer.Serialize(method)},\"payload\":{{}}}}";
+
+        var response = await bridge.HandleAsync(request);
+
+        using var document = JsonDocument.Parse(response);
+        Assert.False(document.RootElement.GetProperty("ok").GetBoolean());
+        Assert.Contains("method", document.RootElement.GetProperty("error").GetString());
+        Assert.Null(dispatcher.LastMethod);
+    }
+
+    [Fact]
+    public async Task HandleAsyncRejectsMalformedCancellationTargets()
+    {
+        var bridge = new DesktopBridgeSession(new RecordingDispatcher());
+
+        var response = await bridge.HandleAsync(
+            """{"protocol_version":1,"id":"cancel-1","method":"cancel_command","payload":{"target_id":"\uFFFD"}}""");
+
+        using var document = JsonDocument.Parse(response);
+        Assert.False(document.RootElement.GetProperty("ok").GetBoolean());
+        Assert.Contains("target_id", document.RootElement.GetProperty("error").GetString());
     }
 
     [Fact]
@@ -227,6 +322,12 @@ public sealed class DesktopBridgeTests
             {
                 value = new string('x', DesktopBridgeSession.MaximumMessageCharacters),
             }));
+    }
+
+    private sealed class LargeErrorDispatcher : IDesktopCommandDispatcher
+    {
+        public Task<JsonElement> DispatchAsync(string method, JsonElement payload, CancellationToken cancellationToken) =>
+            throw new DesktopBridgeException(new string('x', DesktopBridgeSession.MaximumMessageCharacters));
     }
 
     private sealed class BlockingDispatcher : IDesktopCommandDispatcher

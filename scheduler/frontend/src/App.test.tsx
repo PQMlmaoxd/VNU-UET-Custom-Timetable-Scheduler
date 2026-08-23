@@ -38,14 +38,14 @@ class FakeDesktopWebView {
 
     const error = this.commandErrors[request.method];
     if (error) {
-      this.respond({ protocol_version: 1, id: request.id, ok: false, error });
+      this.respond({ protocol_version: 1, id: request.id, ok: false, result: null, error });
       return;
     }
 
     const result = request.method === "validate_workbook"
       ? this.response
       : this.commandResults[request.method] ?? {};
-    this.respond({ protocol_version: 1, id: request.id, ok: true, result });
+    this.respond({ protocol_version: 1, id: request.id, ok: true, result, error: null });
   }
 
   respond(data: unknown) {
@@ -398,6 +398,7 @@ describe("App", () => {
       id: saveRequest.id,
       ok: true,
       result: { saved: true, file_name: "stale.json" },
+      error: null,
     });
 
     await waitFor(() => expect(screen.getByRole("heading", { name: COPY.upload.heading })).toBeInTheDocument());
@@ -500,7 +501,7 @@ describe("App", () => {
     const firstRequest = webView.messages.find(
       (message) => (message as DesktopMessage).method === "validate_workbook",
     ) as DesktopMessage;
-    webView.respond({ protocol_version: 1, id: firstRequest.id, ok: true, result: workbookResponse });
+    webView.respond({ protocol_version: 1, id: firstRequest.id, ok: true, result: workbookResponse, error: null });
 
     await waitFor(() => {
       expect(screen.getByLabelText(COPY.product.currentFile)).toHaveTextContent("second.xlsx");

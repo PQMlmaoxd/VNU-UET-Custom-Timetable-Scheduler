@@ -56,6 +56,27 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task ValidateWorkbookReplacesMalformedDisplayName()
+    {
+        var workbookPath = CreateWorkbook();
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            workbook = new
+            {
+                file_name = "fixture-\uFFFD.xlsx",
+                bytes_base64 = Convert.ToBase64String(await File.ReadAllBytesAsync(workbookPath)),
+            },
+        });
+
+        var result = await new DesktopCommandDispatcher().DispatchAsync(
+            "validate_workbook",
+            payload,
+            CancellationToken.None);
+
+        Assert.Equal("unknown", result.GetProperty("workbook_path").GetString());
+    }
+
+    [Fact]
     [Trait("Category", "Compatibility")]
     public async Task ValidatePdfReturnsCurrentReactContractWhenSignedPdfIsAvailable()
     {
@@ -124,6 +145,54 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
         Assert.Equal(0, result.GetProperty("solutions")[0].GetProperty("movement_cost").GetInt32());
         Assert.Equal("LHP-1", result.GetProperty("solutions")[0].GetProperty("desired_assignments")[0]
             .GetProperty("lhp_codes")[0].GetString());
+    }
+
+    [Theory]
+    [InlineData("null_assignment")]
+    [InlineData("course_name")]
+    [InlineData("teaching_team_key")]
+    [InlineData("teaching_team_label")]
+    [InlineData("lecturer_name")]
+    public async Task SolveWorkbookRejectsMalformedDesiredAssignments(string field)
+    {
+        var workbookPath = CreateWorkbook();
+        JsonNode? assignment = field == "null_assignment"
+            ? null
+            : new JsonObject
+            {
+                ["course_code"] = "INT1000",
+                ["course_name"] = "Programming",
+                ["teaching_team_key"] = "team-alice",
+                ["teaching_team_label"] = "Alice",
+                ["lecturer_name"] = "Alice",
+            };
+        if (assignment is JsonObject assignmentObject)
+        {
+            assignmentObject[field] = "\uFFFD";
+        }
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            workbook = new
+            {
+                file_name = "fixture.xlsx",
+                bytes_base64 = Convert.ToBase64String(await File.ReadAllBytesAsync(workbookPath)),
+            },
+            desired_assignments = new JsonArray(assignment),
+            timeout_seconds = 30,
+        });
+        var solverCalled = false;
+        var dispatcher = new DesktopCommandDispatcher(() =>
+        {
+            solverCalled = true;
+            return new SatisfyingSolver();
+        });
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "solve_workbook",
+            payload,
+            CancellationToken.None));
+
+        Assert.False(solverCalled);
     }
 
     [Fact]
@@ -221,6 +290,31 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
 
         using var document = JsonDocument.Parse(await File.ReadAllTextAsync(destination));
         Assert.Equal(new string('s', 259), document.RootElement.GetProperty("source").GetProperty("file_name").GetString());
+    }
+
+    [Fact]
+    public async Task SaveTimetableReplacesMalformedSourceFileName()
+    {
+        var destination = Path.Combine(temporaryDirectory, "source-name.json");
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => destination);
+        var solveResult = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+
+        await dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new
+            {
+                timetable = solveResult,
+                source_file_name = "source-\uFFFD.xlsx",
+            }),
+            CancellationToken.None);
+
+        using var document = JsonDocument.Parse(await File.ReadAllTextAsync(destination));
+        Assert.Equal("unknown", document.RootElement.GetProperty("source").GetProperty("file_name").GetString());
     }
 
     [Fact]
@@ -455,6 +549,27 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
             JsonSerializer.SerializeToElement(new { timetable = solveResult }),
             CancellationToken.None));
 
+        Assert.False(File.Exists(destination));
+    }
+
+    [Fact]
+    public async Task SaveTimetableRejectsMalformedDestinationFileName()
+    {
+        var destination = Path.Combine(temporaryDirectory, "saved-\uFFFD.json");
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => destination);
+        var solveResult = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable = solveResult }),
+            CancellationToken.None));
+
+        Assert.Contains("Tên tệp", exception.Message, StringComparison.Ordinal);
         Assert.False(File.Exists(destination));
     }
 
@@ -1338,6 +1453,92 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
         using var document = JsonDocument.Parse(manifestReader.ReadToEnd());
         Assert.Equal("INT1000", document.RootElement.GetProperty("selection").GetProperty("desired_assignments")[0]
             .GetProperty("course_code").GetString());
+    }
+
+    [Fact]
+    public async Task ExportUnsatArtifactReturnsCancellationWithoutCreatingAFile()
+    {
+        var workbookPath = CreateWorkbook();
+        var workbook = new
+        {
+            file_name = "fixture.xlsx",
+            bytes_base64 = Convert.ToBase64String(await File.ReadAllBytesAsync(workbookPath)),
+        };
+        var desiredAssignments = new[]
+        {
+            new { course_code = "INT1000", course_name = "Programming", teaching_team_label = "Alice" },
+        };
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new InfeasibleSolver(),
+            () => null);
+        var solveResult = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            JsonSerializer.SerializeToElement(new
+            {
+                workbook,
+                desired_assignments = desiredAssignments,
+                timeout_seconds = 30,
+            }),
+            CancellationToken.None);
+
+        var result = await dispatcher.DispatchAsync(
+            "export_unsat_artifact",
+            JsonSerializer.SerializeToElement(new
+            {
+                workbook,
+                desired_assignments = desiredAssignments,
+                verification_token = solveResult.GetProperty("solver").GetProperty("formal_verification_token").GetString(),
+            }),
+            CancellationToken.None);
+
+        Assert.False(result.GetProperty("exported").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, result.GetProperty("file_name").ValueKind);
+        Assert.Equal(JsonValueKind.Null, result.GetProperty("cnf_sha256").ValueKind);
+        Assert.Equal(JsonValueKind.Null, result.GetProperty("variable_count").ValueKind);
+        Assert.Equal(JsonValueKind.Null, result.GetProperty("clause_count").ValueKind);
+        Assert.Empty(Directory.EnumerateFiles(temporaryDirectory, "*.zip"));
+    }
+
+    [Fact]
+    public async Task ExportUnsatArtifactRejectsMalformedDestinationFileName()
+    {
+        var workbookPath = CreateWorkbook();
+        var destination = Path.Combine(temporaryDirectory, "unsat-\uFFFD.zip");
+        var workbook = new
+        {
+            file_name = "fixture.xlsx",
+            bytes_base64 = Convert.ToBase64String(await File.ReadAllBytesAsync(workbookPath)),
+        };
+        var desiredAssignments = new[]
+        {
+            new { course_code = "INT1000", course_name = "Programming", teaching_team_label = "Alice" },
+        };
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new InfeasibleSolver(),
+            () => destination);
+        var solveResult = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            JsonSerializer.SerializeToElement(new
+            {
+                workbook,
+                desired_assignments = desiredAssignments,
+                timeout_seconds = 30,
+            }),
+            CancellationToken.None);
+        var token = solveResult.GetProperty("solver").GetProperty("formal_verification_token").GetString();
+
+        var exception = await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "export_unsat_artifact",
+            JsonSerializer.SerializeToElement(new
+            {
+                workbook,
+                desired_assignments = desiredAssignments,
+                verification_token = token,
+            }),
+            CancellationToken.None));
+
+        Assert.Contains("Tên tệp", exception.Message, StringComparison.Ordinal);
+        Assert.False(File.Exists(destination));
     }
 
     [Fact]

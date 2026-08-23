@@ -198,6 +198,15 @@ describe("saved timetable documents", () => {
   });
 
   it("rejects malformed response metadata and string arrays", () => {
+    const malformedSession = { ...session, lecturer_names: ["\uFFFD"] };
+    const malformedAssignment = {
+      ...desiredAssignment,
+      matched_sessions: [malformedSession],
+      lhp_schedules: [{
+        ...desiredAssignment.lhp_schedules[0],
+        matched_sessions: [malformedSession],
+      }],
+    };
     const malformedTimetables = [
       {
         ...timetable,
@@ -245,13 +254,10 @@ describe("saved timetable documents", () => {
       },
       {
         ...timetable,
-        desired_assignments: [{
-          ...desiredAssignment,
-          matched_sessions: [{ ...session, lecturer_names: ["\uFFFD"] }],
-          lhp_schedules: [{
-            ...desiredAssignment.lhp_schedules[0],
-            matched_sessions: [{ ...session, lecturer_names: ["\uFFFD"] }],
-          }],
+        desired_assignments: [malformedAssignment],
+        solutions: [{
+          ...timetable.solutions[0],
+          desired_assignments: [malformedAssignment],
         }],
       },
     ];

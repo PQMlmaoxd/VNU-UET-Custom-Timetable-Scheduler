@@ -159,6 +159,7 @@ test.beforeEach(async ({ page }) => {
             id: request.id,
             ok: true,
             result,
+            error: null,
           };
           for (const listener of listeners) {
             listener(new MessageEvent("message", { data: response }));

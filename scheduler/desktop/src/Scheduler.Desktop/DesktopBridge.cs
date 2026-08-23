@@ -20,6 +20,7 @@ public sealed class DesktopBridgeSession : IDisposable
 {
     public const int ProtocolVersion = 1;
     public const int MaximumMessageCharacters = 40 * 1024 * 1024;
+    private const int MaximumRequestMetadataCharacters = 128;
 
     private readonly ConcurrentDictionary<string, CancellationTokenSource> activeCommands = new(StringComparer.Ordinal);
     private readonly IDesktopActivityLogger activityLogger;
@@ -60,7 +61,7 @@ public sealed class DesktopBridgeSession : IDisposable
 
             var request = JsonSerializer.Deserialize<DesktopBridgeRequest>(message, SerializerOptions)
                 ?? throw new DesktopBridgeException("Desktop bridge request is empty.");
-            requestId = request.Id;
+            requestId = GetSafeRequestId(request.Id);
             ValidateRequest(request);
             command = NormalizeCommand(request.Method);
 
@@ -178,7 +179,7 @@ public sealed class DesktopBridgeSession : IDisposable
     {
         var request = JsonSerializer.Deserialize<CancelCommandRequest>(payload.GetRawText(), SerializerOptions)
             ?? throw new DesktopBridgeException("Desktop cancellation payload is empty.");
-        if (string.IsNullOrWhiteSpace(request.TargetId) || request.TargetId.Length > 128)
+        if (!IsValidRequestMetadata(request.TargetId))
         {
             throw new DesktopBridgeException("Desktop cancellation target_id must contain 1 to 128 characters.");
         }
@@ -216,8 +217,18 @@ public sealed class DesktopBridgeSession : IDisposable
         return JsonSerializer.SerializeToElement(new SetThemeResult(DesktopTheme.ToWireValue(preference)), SerializerOptions);
     }
 
-    private static string CreateSuccessResponse(string requestId, JsonElement result) =>
-        SerializeResponse(new DesktopBridgeResponse(ProtocolVersion, requestId, true, result, null));
+    private static string CreateSuccessResponse(string requestId, JsonElement result)
+    {
+        var serialized = JsonSerializer.Serialize(
+            new DesktopBridgeResponse(ProtocolVersion, requestId, true, result, null),
+            SerializerOptions);
+        if (serialized.Length > MaximumMessageCharacters)
+        {
+            throw new DesktopBridgeException("Desktop bridge response is too large.");
+        }
+
+        return serialized;
+    }
 
     private static string CreateErrorResponse(string requestId, string error) =>
         SerializeResponse(new DesktopBridgeResponse(ProtocolVersion, requestId, false, null, error));
@@ -233,7 +244,7 @@ public sealed class DesktopBridgeSession : IDisposable
         return JsonSerializer.Serialize(
             new DesktopBridgeResponse(
                 ProtocolVersion,
-                response.Id,
+                GetSafeRequestId(response.Id),
                 false,
                 null,
                 "Desktop bridge response is too large."),
@@ -247,15 +258,51 @@ public sealed class DesktopBridgeSession : IDisposable
             throw new DesktopBridgeException($"Unsupported desktop bridge protocol version: {request.ProtocolVersion}.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.Id) || request.Id.Length > 128)
+        if (!IsValidRequestMetadata(request.Id))
         {
             throw new DesktopBridgeException("Desktop bridge request ID must contain 1 to 128 characters.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.Method) || request.Method.Length > 128)
+        if (!IsValidRequestMetadata(request.Method))
         {
             throw new DesktopBridgeException("Desktop bridge method must contain 1 to 128 characters.");
         }
+    }
+
+    private static string GetSafeRequestId(string? requestId) =>
+        IsValidRequestMetadata(requestId) ? requestId! : string.Empty;
+
+    private static bool IsValidRequestMetadata(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > MaximumRequestMetadataCharacters)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < value.Length; index++)
+        {
+            var codeUnit = value[index];
+            if (codeUnit == '\uFFFD')
+            {
+                return false;
+            }
+
+            if (char.IsHighSurrogate(codeUnit))
+            {
+                if (index + 1 >= value.Length || !char.IsLowSurrogate(value[index + 1]))
+                {
+                    return false;
+                }
+
+                index++;
+            }
+            else if (char.IsLowSurrogate(codeUnit))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static string NormalizeCommand(string method) => method switch
@@ -279,7 +326,7 @@ public sealed class DesktopBridgeSession : IDisposable
         {
             await activityLogger.RecordAsync(new DesktopActivity(
                 DateTimeOffset.UtcNow,
-                string.IsNullOrWhiteSpace(requestId) ? "invalid" : requestId,
+                requestId.Length == 0 ? "invalid" : requestId,
                 command,
                 outcome,
                 checked((long)Math.Ceiling(elapsed.TotalMilliseconds)),

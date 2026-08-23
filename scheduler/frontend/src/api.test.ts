@@ -267,14 +267,14 @@ describe("desktop bridge API", () => {
     await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
     expect(webView.messages[0]).toMatchObject({ method: "set_theme", payload: { preference: "dark" } });
     const themeRequest = webView.messages[0] as { id: string };
-    webView.respond({ protocol_version: 1, id: themeRequest.id, ok: true, result: { preference: "dark" } });
+    webView.respond({ protocol_version: 1, id: themeRequest.id, ok: true, result: { preference: "dark" }, error: null });
     await expect(theme).resolves.toBeUndefined();
 
     const ready = notifyDesktopReady();
     await vi.waitFor(() => expect(webView.messages).toHaveLength(2));
     expect(webView.messages[1]).toMatchObject({ method: "desktop_ready" });
     const readyRequest = webView.messages[1] as { id: string };
-    webView.respond({ protocol_version: 1, id: readyRequest.id, ok: true, result: { ready: true } });
+    webView.respond({ protocol_version: 1, id: readyRequest.id, ok: true, result: { ready: true }, error: null });
     await expect(ready).resolves.toBeUndefined();
   });
 
@@ -312,9 +312,146 @@ describe("desktop bridge API", () => {
         variable_count: 1,
         clause_count: 1,
       },
+      error: null,
     });
 
     await expect(exportRequest).resolves.toMatchObject({ exported: true });
+  });
+
+  it("returns a native dialog cancellation from UNSAT artifact export", async () => {
+    const webView = new FakeDesktopWebView();
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: webView },
+    });
+    const workbook = {
+      name: "schedule.xlsx",
+      arrayBuffer: async () => new TextEncoder().encode("workbook").buffer,
+    } as File;
+    const exportRequest = exportUnsatArtifact(workbook, [
+      { course_code: "INT1000", course_name: "Programming", teaching_team_key: "team-alice", teaching_team_label: "Alice" },
+    ], "verification-token");
+
+    await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
+    const request = webView.messages[0] as { id: string };
+    webView.respond({
+      protocol_version: 1,
+      id: request.id,
+      ok: true,
+      result: {
+        exported: false,
+        file_name: null,
+        cnf_sha256: null,
+        variable_count: null,
+        clause_count: null,
+      },
+      error: null,
+    });
+
+    await expect(exportRequest).resolves.toEqual({
+      exported: false,
+      file_name: null,
+      cnf_sha256: null,
+      variable_count: null,
+      clause_count: null,
+    });
+  });
+
+  it("rejects malformed UNSAT artifact response metadata", async () => {
+    const webView = new FakeDesktopWebView();
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: webView },
+    });
+    const workbook = {
+      name: "schedule.xlsx",
+      arrayBuffer: async () => new TextEncoder().encode("workbook").buffer,
+    } as File;
+    const exportRequest = exportUnsatArtifact(workbook, [
+      { course_code: "INT1000", course_name: "Programming", teaching_team_key: "team-alice", teaching_team_label: "Alice" },
+    ], "verification-token");
+
+    await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
+    const request = webView.messages[0] as { id: string };
+    webView.respond({
+      protocol_version: 1,
+      id: request.id,
+      ok: true,
+      result: {
+        exported: true,
+        file_name: "unsat-\uFFFD.zip",
+        cnf_sha256: "A".repeat(64),
+        variable_count: 1,
+        clause_count: 1,
+      },
+      error: null,
+    });
+
+    await expect(exportRequest).rejects.toThrow("Desktop bridge returned an invalid result.");
+  });
+
+  it.each([
+    { file_name: " ", cnf_sha256: "A".repeat(64), variable_count: 1, clause_count: 1 },
+    { file_name: "unsat.zip", cnf_sha256: "not-a-sha256", variable_count: 1, clause_count: 1 },
+    { file_name: null, cnf_sha256: null, variable_count: null, clause_count: null },
+  ])("rejects incoherent successful UNSAT artifact metadata", async (metadata) => {
+    const webView = new FakeDesktopWebView();
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: webView },
+    });
+    const workbook = {
+      name: "schedule.xlsx",
+      arrayBuffer: async () => new TextEncoder().encode("workbook").buffer,
+    } as File;
+    const exportRequest = exportUnsatArtifact(workbook, [
+      { course_code: "INT1000", course_name: "Programming", teaching_team_key: "team-alice", teaching_team_label: "Alice" },
+    ], "verification-token");
+
+    await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
+    const request = webView.messages[0] as { id: string };
+    webView.respond({
+      protocol_version: 1,
+      id: request.id,
+      ok: true,
+      result: { exported: true, ...metadata },
+      error: null,
+    });
+
+    await expect(exportRequest).rejects.toThrow("Desktop bridge returned an invalid result.");
+  });
+
+  it("rejects metadata on a cancelled UNSAT artifact export", async () => {
+    const webView = new FakeDesktopWebView();
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: webView },
+    });
+    const workbook = {
+      name: "schedule.xlsx",
+      arrayBuffer: async () => new TextEncoder().encode("workbook").buffer,
+    } as File;
+    const exportRequest = exportUnsatArtifact(workbook, [
+      { course_code: "INT1000", course_name: "Programming", teaching_team_key: "team-alice", teaching_team_label: "Alice" },
+    ], "verification-token");
+
+    await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
+    const request = webView.messages[0] as { id: string };
+    webView.respond({
+      protocol_version: 1,
+      id: request.id,
+      ok: true,
+      result: {
+        exported: false,
+        file_name: "unsat.zip",
+        cnf_sha256: "A".repeat(64),
+        variable_count: 1,
+        clause_count: 1,
+      },
+      error: null,
+    });
+
+    await expect(exportRequest).rejects.toThrow("Desktop bridge returned an invalid result.");
   });
 
   it("saves a SAT timetable through the desktop bridge", async () => {
@@ -340,6 +477,7 @@ describe("desktop bridge API", () => {
       id: request.id,
       ok: true,
       result: { saved: true, file_name: "TKB-CNTT-20260821-1530.json" },
+      error: null,
     });
 
     await expect(saveRequest).resolves.toEqual({
@@ -363,6 +501,7 @@ describe("desktop bridge API", () => {
       id: request.id,
       ok: true,
       result: { saved: false, file_name: null },
+      error: null,
     });
 
     await expect(saveRequest).resolves.toEqual({ saved: false, file_name: null });
@@ -383,6 +522,52 @@ describe("desktop bridge API", () => {
       id: request.id,
       ok: true,
       result: { saved: "yes", file_name: null },
+      error: null,
+    });
+
+    await expect(saveRequest).rejects.toThrow("Desktop bridge returned an invalid result.");
+  });
+
+  it("rejects a malformed timetable save file name", async () => {
+    const webView = new FakeDesktopWebView();
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: webView },
+    });
+    const saveRequest = saveTimetable({} as RescheduleResponse, "schedule.json");
+
+    await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
+    const request = webView.messages[0] as { id: string };
+    webView.respond({
+      protocol_version: 1,
+      id: request.id,
+      ok: true,
+      result: { saved: true, file_name: "saved-\uFFFD.json" },
+      error: null,
+    });
+
+    await expect(saveRequest).rejects.toThrow("Desktop bridge returned an invalid result.");
+  });
+
+  it.each([
+    { saved: true, file_name: " " },
+    { saved: false, file_name: "saved.json" },
+  ])("rejects incoherent timetable save metadata", async (result) => {
+    const webView = new FakeDesktopWebView();
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: webView },
+    });
+    const saveRequest = saveTimetable({} as RescheduleResponse, "schedule.json");
+
+    await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
+    const request = webView.messages[0] as { id: string };
+    webView.respond({
+      protocol_version: 1,
+      id: request.id,
+      ok: true,
+      result,
+      error: null,
     });
 
     await expect(saveRequest).rejects.toThrow("Desktop bridge returned an invalid result.");
@@ -427,7 +612,53 @@ describe("desktop bridge API", () => {
 
     await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
     const request = webView.messages[0] as { id: string };
-    webView.respond({ protocol_version: 1, id: request.id, ok: "true" });
+    webView.respond({ protocol_version: 1, id: request.id, ok: "true", result: null, error: null });
+
+    await expect(validation).rejects.toThrow("invalid response");
+  });
+
+  it("rejects malformed errors for the active bridge request", async () => {
+    const webView = new FakeDesktopWebView();
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: webView },
+    });
+    const workbook = {
+      name: "schedule.xlsx",
+      arrayBuffer: async () => new TextEncoder().encode("workbook").buffer,
+    } as File;
+    const validation = validateWorkbook(workbook);
+
+    await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
+    const request = webView.messages[0] as { id: string };
+    webView.respond({ protocol_version: 1, id: request.id, ok: false, result: null, error: "invalid-\uFFFD" });
+
+    await expect(validation).rejects.toThrow("invalid response");
+  });
+
+  it.each([
+    { ok: true, result: validateResponse, error: "contradictory error" },
+    { ok: false, result: validateResponse, error: "failed" },
+    { ok: false, result: null, error: " " },
+  ])("rejects contradictory desktop bridge envelopes", async (envelope) => {
+    const webView = new FakeDesktopWebView();
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: webView },
+    });
+    const workbook = {
+      name: "schedule.xlsx",
+      arrayBuffer: async () => new TextEncoder().encode("workbook").buffer,
+    } as File;
+    const validation = validateWorkbook(workbook);
+
+    await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
+    const request = webView.messages[0] as { id: string };
+    webView.respond({
+      protocol_version: 1,
+      id: request.id,
+      ...envelope,
+    });
 
     await expect(validation).rejects.toThrow("invalid response");
   });
@@ -446,7 +677,7 @@ describe("desktop bridge API", () => {
 
     await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
     const request = webView.messages[0] as { id: string };
-    webView.respond({ protocol_version: 99, id: request.id, ok: true, result: {} });
+    webView.respond({ protocol_version: 99, id: request.id, ok: true, result: {}, error: null });
 
     await expect(validation).rejects.toThrow("protocol version is incompatible");
   });
@@ -485,6 +716,7 @@ describe("desktop bridge API", () => {
         solver: { satisfiability: "SAT" },
         solved_schedule_validation: null,
       },
+      error: null,
     });
 
     await expect(solve).rejects.toThrow("invalid result");

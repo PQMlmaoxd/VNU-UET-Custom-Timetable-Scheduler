@@ -204,6 +204,11 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
             return DesktopResponseMapper.ToJson(new ExportUnsatArtifactResponse(false, null, null, null, null));
         }
 
+        var archivePath = Path.GetFullPath(outputPath);
+        var archiveDirectory = Path.GetDirectoryName(archivePath)
+            ?? throw new DesktopBridgeException("Không thể xác định thư mục xuất gói kiểm chứng.");
+        var archiveFileName = GetWellFormedOutputFileName(archivePath);
+
         var parseResult = await ParseAsync(document, cancellationToken);
         if (!parseResult.QuarantinedOfferings.IsEmpty)
         {
@@ -246,13 +251,10 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
                 preparedSelection.Specification,
                 preparedSelection.Cnf));
 
-            var archivePath = Path.GetFullPath(outputPath);
-            var archiveDirectory = Path.GetDirectoryName(archivePath)
-                ?? throw new DesktopBridgeException("Không thể xác định thư mục xuất gói kiểm chứng.");
             Directory.CreateDirectory(archiveDirectory);
             var temporaryArchivePath = Path.Combine(
                 archiveDirectory,
-                $".{Path.GetFileName(archivePath)}.{Guid.NewGuid():N}.tmp");
+                $".{archiveFileName}.{Guid.NewGuid():N}.tmp");
             try
             {
                 ZipFile.CreateFromDirectory(
@@ -274,7 +276,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
 
             return DesktopResponseMapper.ToJson(new ExportUnsatArtifactResponse(
                 true,
-                Path.GetFileName(archivePath),
+                archiveFileName,
                 cnfSha256,
                 preparedSelection.Cnf.VariableCount,
                 preparedSelection.Cnf.ClauseCount));
@@ -338,12 +340,13 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
             throw new DesktopBridgeException("Hãy chọn tệp có phần mở rộng .json để lưu thời khóa biểu.");
         }
 
+        var outputFileName = GetWellFormedOutputFileName(fullPath);
         var outputDirectory = Path.GetDirectoryName(fullPath)
             ?? throw new DesktopBridgeException("Không thể xác định thư mục lưu thời khóa biểu.");
         Directory.CreateDirectory(outputDirectory);
         var temporaryPath = Path.Combine(
             outputDirectory,
-            $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+            $".{outputFileName}.{Guid.NewGuid():N}.tmp");
 
         try
         {
@@ -352,7 +355,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
             File.Move(temporaryPath, fullPath, overwrite: true);
             return DesktopResponseMapper.ToJson(new DesktopResponseMapper.SaveTimetableResponse(
                 true,
-                Path.GetFileName(fullPath)));
+                outputFileName));
         }
         finally
         {
@@ -1160,7 +1163,20 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
     {
         var normalized = (sourceFileName ?? string.Empty).Replace('\\', '/');
         normalized = Path.GetFileName(normalized);
-        return string.IsNullOrWhiteSpace(normalized) ? "unknown" : TruncateUtf16(normalized, 260);
+        return string.IsNullOrWhiteSpace(normalized) || !IsWellFormedString(normalized)
+            ? "unknown"
+            : TruncateUtf16(normalized, 260);
+    }
+
+    private static string GetWellFormedOutputFileName(string path)
+    {
+        var fileName = Path.GetFileName(path);
+        if (string.IsNullOrWhiteSpace(fileName) || !IsWellFormedString(fileName))
+        {
+            throw new DesktopBridgeException("Tên tệp đã chọn chứa ký tự không được hỗ trợ.");
+        }
+
+        return fileName;
     }
 
     private static string CreateTimetableFileName(string department, DateTimeOffset now)
@@ -1210,16 +1226,32 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         for (var index = 0; index < assignments.Length; index++)
         {
             var assignment = assignments[index];
-            if (string.IsNullOrWhiteSpace(assignment.CourseCode) ||
-                string.IsNullOrWhiteSpace(assignment.TeachingTeamLabel ?? assignment.LegacyLecturerName))
+            if (assignment is null ||
+                !IsWellFormedString(assignment.CourseCode) ||
+                string.IsNullOrWhiteSpace(assignment.CourseCode))
             {
                 throw new DesktopBridgeException("Chọn đủ môn và nhóm giảng dạy trước khi tìm lịch.");
             }
 
-            if ((assignment.CourseCode?.Length ?? 0) > MaxAssignmentFieldCharacters ||
+            var teachingTeamLabel = assignment.TeachingTeamLabel ?? assignment.LegacyLecturerName;
+            if (!IsWellFormedString(teachingTeamLabel) || string.IsNullOrWhiteSpace(teachingTeamLabel))
+            {
+                throw new DesktopBridgeException("Chọn đủ môn và nhóm giảng dạy trước khi tìm lịch.");
+            }
+
+            if ((assignment.CourseName is not null && !IsWellFormedString(assignment.CourseName)) ||
+                (assignment.TeachingTeamKey is not null && !IsWellFormedString(assignment.TeachingTeamKey)) ||
+                (assignment.TeachingTeamLabel is not null && !IsWellFormedString(assignment.TeachingTeamLabel)) ||
+                (assignment.LegacyLecturerName is not null && !IsWellFormedString(assignment.LegacyLecturerName)))
+            {
+                throw new DesktopBridgeException("Thông tin môn học hoặc nhóm giảng dạy chứa ký tự không được hỗ trợ.");
+            }
+
+            if (assignment.CourseCode.Length > MaxAssignmentFieldCharacters ||
                 (assignment.CourseName?.Length ?? 0) > MaxAssignmentFieldCharacters ||
                 (assignment.TeachingTeamKey?.Length ?? 0) > MaxAssignmentFieldCharacters ||
-                (assignment.TeachingTeamLabel?.Length ?? assignment.LegacyLecturerName?.Length ?? 0) > MaxAssignmentFieldCharacters)
+                (assignment.TeachingTeamLabel?.Length ?? 0) > MaxAssignmentFieldCharacters ||
+                (assignment.LegacyLecturerName?.Length ?? 0) > MaxAssignmentFieldCharacters)
             {
                 throw new DesktopBridgeException("Thông tin môn học hoặc nhóm giảng dạy vượt quá giới hạn cho phép.");
             }
@@ -1392,7 +1424,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
                     bufferSize: 4096,
                     FileOptions.Asynchronous | FileOptions.SequentialScan);
                 await stream.WriteAsync(fileContents, cancellationToken);
-                return new TemporaryTimetableFile(path, System.IO.Path.GetFileName(payload.FileName), format.Value);
+                return new TemporaryTimetableFile(path, NormalizeSourceFileName(payload.FileName), format.Value);
             }
             catch
             {
