@@ -297,9 +297,9 @@ export async function saveTimetable(
 
 function isDesktopBridgeResponse(value: Record<string, unknown>): value is DesktopBridgeResponse {
   return typeof value.protocol_version === "number"
-    && typeof value.id === "string"
+    && isWellFormedString(value.id)
     && typeof value.ok === "boolean"
-    && (value.error === undefined || value.error === null || typeof value.error === "string");
+    && (value.error === undefined || value.error === null || isWellFormedString(value.error));
 }
 
 function parseDesktopBridgeMessage(value: unknown): Record<string, unknown> | null {
@@ -401,7 +401,7 @@ function isUnsatArtifactExportResponse(value: unknown): value is UnsatArtifactEx
 function isSaveTimetableResponse(value: unknown): value is SaveTimetableResponse {
   return isRecord(value)
     && typeof value.saved === "boolean"
-    && (value.file_name === null || typeof value.file_name === "string");
+    && (value.file_name === null || isWellFormedString(value.file_name));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -412,7 +412,7 @@ function isNonEmptyString(value: unknown): value is string {
   return isWellFormedString(value) && value.trim().length > 0;
 }
 
-function isWellFormedString(value: unknown): value is string {
+export function isWellFormedString(value: unknown): value is string {
   if (typeof value !== "string") {
     return false;
   }
@@ -444,7 +444,7 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): b
 }
 
 function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
+  return Array.isArray(value) && value.every(isWellFormedString);
 }
 
 function isInteger(value: unknown): value is number {
@@ -509,9 +509,9 @@ function isParseSummary(value: unknown): boolean {
         "quarantined_row_count",
         "excluded_session_count",
       ])
-      && typeof offering.course_code === "string"
-      && typeof offering.lhp_code === "string"
-      && typeof offering.reason_code === "string"
+      && isWellFormedString(offering.course_code)
+      && isWellFormedString(offering.lhp_code)
+      && isWellFormedString(offering.reason_code)
       && isStringArray(offering.source_locations)
       && isNonNegativeInteger(offering.quarantined_row_count)
       && isNonNegativeInteger(offering.excluded_session_count));
@@ -529,18 +529,18 @@ function isPrototypeCatalog(value: unknown): boolean {
         "teaching_team_label",
         "session_count",
       ])
-      && typeof anchor.course_code === "string"
-      && typeof anchor.course_name === "string"
-      && typeof anchor.teaching_team_key === "string"
-      && typeof anchor.teaching_team_label === "string"
+      && isWellFormedString(anchor.course_code)
+      && isWellFormedString(anchor.course_name)
+      && isWellFormedString(anchor.teaching_team_key)
+      && isWellFormedString(anchor.teaching_team_label)
       && isNonNegativeInteger(anchor.session_count))
     && Array.isArray(value.room_cost_rules)
     && value.room_cost_rules.every((rule) => isRecord(rule)
       && hasOnlyKeys(rule, ["from_zone", "to_zone", "cost", "description"])
-      && typeof rule.from_zone === "string"
-      && typeof rule.to_zone === "string"
+      && isWellFormedString(rule.from_zone)
+      && isWellFormedString(rule.to_zone)
       && isInteger(rule.cost)
-      && typeof rule.description === "string");
+      && isWellFormedString(rule.description));
 }
 
 function isValidationSummary(value: unknown): boolean {
@@ -576,13 +576,13 @@ function isSessionScheduleItem(value: unknown): boolean {
       "period_code",
       "period_atomic",
     ])
-    && typeof value.course_code === "string"
-    && typeof value.course_name === "string"
-    && typeof value.lhp_code === "string"
-    && typeof value.session_type === "string"
+    && isWellFormedString(value.course_code)
+    && isWellFormedString(value.course_name)
+    && isWellFormedString(value.lhp_code)
+    && isWellFormedString(value.session_type)
     && VALID_SESSION_TYPES.has(value.session_type)
-    && typeof value.timeslot_label === "string"
-    && typeof value.room_code === "string"
+    && isWellFormedString(value.timeslot_label)
+    && isWellFormedString(value.room_code)
     && isNonEmptyString(value.course_code)
     && isNonEmptyString(value.lhp_code)
     && isNonEmptyString(value.session_id)
@@ -591,7 +591,7 @@ function isSessionScheduleItem(value: unknown): boolean {
     && isStringArray(value.cohort_codes)
     && isInteger(value.source_row)
     && (value.day === null || isInteger(value.day))
-    && (value.period_code === null || typeof value.period_code === "string")
+    && (value.period_code === null || isWellFormedString(value.period_code))
     && (value.period_atomic === null || isStringArray(value.period_atomic))
     && isValidSessionTiming(value);
 }
@@ -610,7 +610,7 @@ function isValidSessionTiming(value: Record<string, unknown>): boolean {
   if (!isInteger(day)
     || day < 2
     || day > 7
-    || typeof periodCode !== "string"
+    || !isWellFormedString(periodCode)
     || !VALID_PERIOD_CODES.has(periodCode)
     || !isStringArray(periodAtomic)
     || periodAtomic.length === 0
@@ -991,7 +991,7 @@ function isSolverSummary(value: unknown): value is SolverSummaryShape {
   const satisfiability = value.satisfiability;
   const solutionCount = value.solution_count;
   const assignmentCount = value.assignment_count;
-  const validShape = typeof value.backend === "string"
+  const validShape = isWellFormedString(value.backend)
     && hasOnlyKeys(value, [
       "backend",
       "status",
@@ -1006,13 +1006,13 @@ function isSolverSummary(value: unknown): value is SolverSummaryShape {
     ])
     && ["feasible", "infeasible", "timeout"].includes(status as string)
     && ["SAT", "UNSAT", "UNKNOWN"].includes(satisfiability as string)
-    && typeof value.solver_info === "string"
+    && isWellFormedString(value.solver_info)
     && isNonNegativeInteger(value.solve_time_ms)
     && (value.objective_value === null || (typeof value.objective_value === "number" && Number.isFinite(value.objective_value)))
     && isNonNegativeInteger(assignmentCount)
     && isNonNegativeInteger(solutionCount)
     && isStringArray(value.explanation)
-    && (value.formal_verification_token === null || typeof value.formal_verification_token === "string");
+    && (value.formal_verification_token === null || isWellFormedString(value.formal_verification_token));
 
   if (!validShape) {
     return false;

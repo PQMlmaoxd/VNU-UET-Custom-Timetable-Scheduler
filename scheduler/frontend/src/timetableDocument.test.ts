@@ -182,6 +182,88 @@ describe("saved timetable documents", () => {
     });
   });
 
+  it("rejects malformed saved-document metadata strings", () => {
+    const invalidDocuments = [
+      documentWith({ saved_at_utc: "\uD800" }),
+      documentWith({ app_version: "\uFFFD" }),
+      documentWith({ source: { file_name: "\uDC00" } }),
+    ];
+
+    for (const invalidDocument of invalidDocuments) {
+      expect(parseTimetableDocument(JSON.stringify(invalidDocument))).toEqual({
+        ok: false,
+        code: "invalid-envelope",
+      });
+    }
+  });
+
+  it("rejects malformed response metadata and string arrays", () => {
+    const malformedTimetables = [
+      {
+        ...timetable,
+        parse_summary: { ...timetable.parse_summary, warnings: ["\uFFFD"] },
+      },
+      {
+        ...timetable,
+        parse_summary: {
+          ...timetable.parse_summary,
+          quarantined_offerings: [{
+            course_code: "\uD800",
+            lhp_code: "LHP-1",
+            reason_code: "invalid",
+            source_locations: [],
+            quarantined_row_count: 1,
+            excluded_session_count: 1,
+          }],
+        },
+      },
+      {
+        ...timetable,
+        prototype_catalog: {
+          ...timetable.prototype_catalog,
+          anchors: [{ ...timetable.prototype_catalog.anchors[0], course_name: "\uFFFD" }],
+        },
+      },
+      {
+        ...timetable,
+        existing_schedule_validation: {
+          ...timetable.existing_schedule_validation,
+          sample_violations: ["\uDC00"],
+        },
+      },
+      {
+        ...timetable,
+        solver: { ...timetable.solver, solver_info: "\uFFFD" },
+      },
+      {
+        ...timetable,
+        solver: { ...timetable.solver, backend: "\uD800" },
+      },
+      {
+        ...timetable,
+        solver: { ...timetable.solver, explanation: ["\uD800"] },
+      },
+      {
+        ...timetable,
+        desired_assignments: [{
+          ...desiredAssignment,
+          matched_sessions: [{ ...session, lecturer_names: ["\uFFFD"] }],
+          lhp_schedules: [{
+            ...desiredAssignment.lhp_schedules[0],
+            matched_sessions: [{ ...session, lecturer_names: ["\uFFFD"] }],
+          }],
+        }],
+      },
+    ];
+
+    for (const invalidTimetable of malformedTimetables) {
+      expect(parseTimetableDocument(JSON.stringify(documentWith({ timetable: invalidTimetable })))).toEqual({
+        ok: false,
+        code: "invalid-timetable",
+      });
+    }
+  });
+
   it("rejects more solutions than the bounded solver contract", () => {
     const tooManySolutions = Array.from({ length: 6 }, (_, index) => ({
       ...timetable.solutions[0],

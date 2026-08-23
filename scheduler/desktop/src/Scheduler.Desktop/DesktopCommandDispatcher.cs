@@ -597,44 +597,44 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         summary.QuarantinedLhpCount >= 0 &&
         summary.QuarantinedSessionCount >= 0 &&
         !summary.Warnings.IsDefault &&
-        summary.Warnings.All(item => item is not null) &&
+        summary.Warnings.All(IsWellFormedString) &&
         !summary.FatalWarnings.IsDefault &&
-        summary.FatalWarnings.All(item => item is not null) &&
+        summary.FatalWarnings.All(IsWellFormedString) &&
         !summary.QuarantinedOfferings.IsDefault &&
         summary.QuarantinedOfferings.All(item =>
             item is not null &&
-            item.CourseCode is not null &&
-            item.LhpCode is not null &&
-            item.ReasonCode is not null &&
+            IsWellFormedString(item.CourseCode) &&
+            IsWellFormedString(item.LhpCode) &&
+            IsWellFormedString(item.ReasonCode) &&
             item.QuarantinedRowCount >= 0 &&
             item.ExcludedSessionCount >= 0 &&
             !item.SourceLocations.IsDefault &&
-            item.SourceLocations.All(location => location is not null));
+            item.SourceLocations.All(IsWellFormedString));
 
     private static bool IsCompletePrototypeCatalog(DesktopResponseMapper.PrototypeCatalog catalog) =>
         !catalog.Anchors.IsDefault &&
         !catalog.RoomCostRules.IsDefault &&
         catalog.Anchors.All(anchor =>
             anchor is not null &&
-            anchor.CourseCode is not null &&
-            anchor.CourseName is not null &&
-            anchor.TeachingTeamKey is not null &&
-            anchor.TeachingTeamLabel is not null &&
+            IsWellFormedString(anchor.CourseCode) &&
+            IsWellFormedString(anchor.CourseName) &&
+            IsWellFormedString(anchor.TeachingTeamKey) &&
+            IsWellFormedString(anchor.TeachingTeamLabel) &&
             anchor.SessionCount >= 0) &&
         catalog.RoomCostRules.All(rule =>
             rule is not null &&
-            rule.FromZone is not null &&
-            rule.ToZone is not null &&
-            rule.Description is not null);
+            IsWellFormedString(rule.FromZone) &&
+            IsWellFormedString(rule.ToZone) &&
+            IsWellFormedString(rule.Description));
 
     private static bool IsCompleteValidationSummary(DesktopResponseMapper.ValidationSummary summary) =>
         summary.ViolationCount >= 0 &&
         summary.MissingSessionCount >= 0 &&
         !summary.SampleViolations.IsDefault &&
-        summary.SampleViolations.All(item => item is not null);
+        summary.SampleViolations.All(IsWellFormedString);
 
     private static bool IsCompleteSolverSummary(DesktopResponseMapper.SolverSummary solver) =>
-        solver.Backend is not null &&
+        IsWellFormedString(solver.Backend) &&
         solver.Status is "feasible" or "infeasible" or "timeout" &&
         solver.Satisfiability is "SAT" or "UNSAT" or "UNKNOWN" &&
         ((solver.Status == "feasible" && solver.Satisfiability == "SAT" && solver.SolutionCount > 0) ||
@@ -644,9 +644,10 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         (solver.ObjectiveValue is null || double.IsFinite(solver.ObjectiveValue.Value)) &&
         solver.AssignmentCount >= 0 &&
         solver.SolutionCount >= 0 &&
-        solver.SolverInfo is not null &&
+        IsWellFormedString(solver.SolverInfo) &&
         !solver.Explanation.IsDefault &&
-        solver.Explanation.All(item => item is not null);
+        solver.Explanation.All(IsWellFormedString) &&
+        (solver.FormalVerificationToken is null || IsWellFormedString(solver.FormalVerificationToken));
 
     private static bool IsCompleteDesiredAnchor(DesktopResponseMapper.DesiredAnchorSummary anchor) =>
         anchor is not null &&
@@ -1159,7 +1160,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
     {
         var normalized = (sourceFileName ?? string.Empty).Replace('\\', '/');
         normalized = Path.GetFileName(normalized);
-        return string.IsNullOrWhiteSpace(normalized) ? "unknown" : normalized[..Math.Min(normalized.Length, 260)];
+        return string.IsNullOrWhiteSpace(normalized) ? "unknown" : TruncateUtf16(normalized, 260);
     }
 
     private static string CreateTimetableFileName(string department, DateTimeOffset now)
@@ -1173,7 +1174,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
             .Trim('-');
         if (safeDepartment.Length > MaxDepartmentFileNameCharacters)
         {
-            safeDepartment = safeDepartment[..MaxDepartmentFileNameCharacters].Trim('-');
+            safeDepartment = TruncateUtf16(safeDepartment, MaxDepartmentFileNameCharacters).Trim('-');
         }
         if (string.IsNullOrWhiteSpace(safeDepartment))
         {
@@ -1181,6 +1182,22 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         }
 
         return $"TKB-{safeDepartment}-{now.ToString("yyyyMMdd-HHmm", CultureInfo.InvariantCulture)}.json";
+    }
+
+    private static string TruncateUtf16(string value, int maximumCharacters)
+    {
+        if (value.Length <= maximumCharacters)
+        {
+            return value;
+        }
+
+        var length = maximumCharacters;
+        if (length > 0 && char.IsHighSurrogate(value[length - 1]))
+        {
+            length--;
+        }
+
+        return value[..length];
     }
 
     private static void ValidateDesiredAssignments(ImmutableArray<DesiredAssignmentPayload> assignments)

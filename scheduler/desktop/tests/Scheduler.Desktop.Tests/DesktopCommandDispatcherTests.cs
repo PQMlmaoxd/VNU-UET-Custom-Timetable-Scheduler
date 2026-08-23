@@ -198,6 +198,32 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveTimetableTruncatesSourceFileNameWithoutSplittingSurrogatePair()
+    {
+        var destination = Path.Combine(temporaryDirectory, "source-name.json");
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => destination);
+        var solveResult = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var sourceFileName = new string('s', 259) + "\U0001F600";
+
+        await dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new
+            {
+                timetable = solveResult,
+                source_file_name = sourceFileName,
+            }),
+            CancellationToken.None);
+
+        using var document = JsonDocument.Parse(await File.ReadAllTextAsync(destination));
+        Assert.Equal(new string('s', 259), document.RootElement.GetProperty("source").GetProperty("file_name").GetString());
+    }
+
+    [Fact]
     public async Task SaveTimetableReturnsCancellationWithoutCreatingAFile()
     {
         var destination = Path.Combine(temporaryDirectory, "cancelled.json");
@@ -493,6 +519,34 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
         Assert.NotNull(suggestedFileName);
         Assert.True(suggestedFileName!.Length <= 255);
         Assert.StartsWith($"TKB-{new string('D', 200)}-", suggestedFileName, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SaveTimetableTruncatesDepartmentWithoutSplittingSurrogatePair()
+    {
+        var destination = Path.Combine(temporaryDirectory, "surrogate-department.json");
+        string? suggestedFileName = null;
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: suggested =>
+            {
+                suggestedFileName = suggested;
+                return destination;
+            });
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+        timetable["department"] = new string('D', 199) + "\U0001F600";
+
+        await dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None);
+
+        Assert.NotNull(suggestedFileName);
+        Assert.StartsWith($"TKB-{new string('D', 199)}-", suggestedFileName, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1128,6 +1182,51 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
         {
             timetable["desired_assignments"]!.AsArray()[0]!["course_code"] = "\uFFFD";
             timetable["solutions"]!.AsArray()[0]!["desired_assignments"]!.AsArray()[0]!["course_code"] = "\uFFFD";
+        }
+
+        await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "save_timetable",
+            JsonSerializer.SerializeToElement(new { timetable }),
+            CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("parse_warning")]
+    [InlineData("prototype_anchor")]
+    [InlineData("validation_violation")]
+    [InlineData("solver_info")]
+    [InlineData("solver_explanation")]
+    public async Task SaveTimetableRejectsMalformedMetadataStrings(string field)
+    {
+        var dispatcher = new DesktopCommandDispatcher(
+            static () => new SatisfyingSolver(),
+            chooseTimetablePath: _ => Path.Combine(temporaryDirectory, "invalid-metadata.json"));
+        var response = await dispatcher.DispatchAsync(
+            "solve_workbook",
+            CreateSolvePayload(CreateWorkbook()),
+            CancellationToken.None);
+        var timetable = JsonNode.Parse(response.GetRawText())!.AsObject();
+
+        switch (field)
+        {
+            case "parse_warning":
+                timetable["parse_summary"]!.AsObject()["warnings"] = new JsonArray(JsonValue.Create("\uFFFD"));
+                break;
+            case "prototype_anchor":
+                timetable["prototype_catalog"]!.AsObject()["anchors"]!.AsArray()[0]!.AsObject()["course_name"] = "\uFFFD";
+                break;
+            case "validation_violation":
+                timetable["existing_schedule_validation"]!.AsObject()["sample_violations"] =
+                    new JsonArray(JsonValue.Create("\uFFFD"));
+                break;
+            case "solver_info":
+                timetable["solver"]!.AsObject()["solver_info"] = "\uFFFD";
+                break;
+            case "solver_explanation":
+                timetable["solver"]!.AsObject()["explanation"] = new JsonArray(JsonValue.Create("\uFFFD"));
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(field), field, null);
         }
 
         await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(

@@ -59,6 +59,20 @@ public sealed class DesktopBridgeTests
     }
 
     [Fact]
+    public async Task HandleAsyncRejectsOversizedResponsesWithTheRequestCorrelationId()
+    {
+        var bridge = new DesktopBridgeSession(new LargeResultDispatcher());
+        var response = await bridge.HandleAsync(
+            """{"protocol_version":1,"id":"request-1","method":"validate_workbook","payload":{}}""");
+
+        using var document = JsonDocument.Parse(response);
+        Assert.False(document.RootElement.GetProperty("ok").GetBoolean());
+        Assert.Equal("request-1", document.RootElement.GetProperty("id").GetString());
+        Assert.Equal("Desktop bridge response is too large.", document.RootElement.GetProperty("error").GetString());
+        Assert.True(response.Length <= DesktopBridgeSession.MaximumMessageCharacters);
+    }
+
+    [Fact]
     public async Task HandleAsyncAllowsOnlyOneHeavyCommandAtATime()
     {
         var dispatcher = new BlockingDispatcher();
@@ -204,6 +218,15 @@ public sealed class DesktopBridgeTests
     {
         public Task<JsonElement> DispatchAsync(string method, JsonElement payload, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("internal details");
+    }
+
+    private sealed class LargeResultDispatcher : IDesktopCommandDispatcher
+    {
+        public Task<JsonElement> DispatchAsync(string method, JsonElement payload, CancellationToken cancellationToken) =>
+            Task.FromResult(JsonSerializer.SerializeToElement(new
+            {
+                value = new string('x', DesktopBridgeSession.MaximumMessageCharacters),
+            }));
     }
 
     private sealed class BlockingDispatcher : IDesktopCommandDispatcher

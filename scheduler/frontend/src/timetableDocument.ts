@@ -1,4 +1,4 @@
-import { isRescheduleResponse } from "./api";
+import { isRescheduleResponse, isWellFormedString } from "./api";
 import type { TimetableDocument } from "./types";
 
 export const TIMETABLE_DOCUMENT_SCHEMA = "vnu-uet-timetable";
@@ -30,10 +30,10 @@ export function parseTimetableDocument(text: string): TimetableDocumentParseResu
       parsed.schema !== TIMETABLE_DOCUMENT_SCHEMA ||
       typeof parsed.schema_version !== "number" ||
       !Number.isInteger(parsed.schema_version) ||
-      typeof parsed.saved_at_utc !== "string" ||
-      typeof parsed.app_version !== "string" ||
+      !isWellFormedString(parsed.saved_at_utc) ||
+      !isWellFormedString(parsed.app_version) ||
       !isRecord(parsed.source) ||
-      typeof parsed.source.file_name !== "string" ||
+      !isWellFormedString(parsed.source.file_name) ||
       !Object.prototype.hasOwnProperty.call(parsed, "timetable")) {
     return { ok: false, code: "invalid-envelope" };
   }

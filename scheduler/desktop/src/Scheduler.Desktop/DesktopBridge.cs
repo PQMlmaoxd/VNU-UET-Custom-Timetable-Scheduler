@@ -113,7 +113,7 @@ public sealed class DesktopBridgeSession : IDisposable
             }
 
             outcome = "completed";
-            return JsonSerializer.Serialize(new DesktopBridgeResponse(ProtocolVersion, request.Id, true, result, null), SerializerOptions);
+            return CreateSuccessResponse(request.Id, result);
         }
         catch (OperationCanceledException)
         {
@@ -217,10 +217,28 @@ public sealed class DesktopBridgeSession : IDisposable
     }
 
     private static string CreateSuccessResponse(string requestId, JsonElement result) =>
-        JsonSerializer.Serialize(new DesktopBridgeResponse(ProtocolVersion, requestId, true, result, null), SerializerOptions);
+        SerializeResponse(new DesktopBridgeResponse(ProtocolVersion, requestId, true, result, null));
 
     private static string CreateErrorResponse(string requestId, string error) =>
-        JsonSerializer.Serialize(new DesktopBridgeResponse(ProtocolVersion, requestId, false, null, error), SerializerOptions);
+        SerializeResponse(new DesktopBridgeResponse(ProtocolVersion, requestId, false, null, error));
+
+    private static string SerializeResponse(DesktopBridgeResponse response)
+    {
+        var serialized = JsonSerializer.Serialize(response, SerializerOptions);
+        if (serialized.Length <= MaximumMessageCharacters)
+        {
+            return serialized;
+        }
+
+        return JsonSerializer.Serialize(
+            new DesktopBridgeResponse(
+                ProtocolVersion,
+                response.Id,
+                false,
+                null,
+                "Desktop bridge response is too large."),
+            SerializerOptions);
+    }
 
     private static void ValidateRequest(DesktopBridgeRequest request)
     {
