@@ -15,9 +15,7 @@ import {
   periodSpan,
   physicalSessionsForSolution,
   sessionDetailId,
-  solutionStats,
 } from "../../utils";
-import { EmptyRail } from "../shared/EmptyRail";
 
 type ResultsPanelProps = {
   solveState: SolveState;
@@ -36,6 +34,8 @@ type ResultsPanelProps = {
   onReset: () => void;
   headingRef: RefObject<HTMLHeadingElement>;
 };
+
+type Solution = NonNullable<RescheduleResponse["solutions"][number]>;
 
 export function ResultsPanel({
   solveState,
@@ -56,10 +56,9 @@ export function ResultsPanel({
 }: ResultsPanelProps) {
   if (solveState === "busy") {
     return (
-      <section className="card primary-card solo-card" aria-labelledby="solving-heading">
-        <p className="section-kicker">{COPY.solve.kicker}</p>
+      <section className="panel panel-pad solo-panel" aria-labelledby="solving-heading">
         <h2 id="solving-heading" ref={headingRef} tabIndex={-1}>{COPY.results.busyHeading}</h2>
-        <p className="section-copy">{COPY.results.busyDetail}</p>
+        <p className="stage-copy">{COPY.results.busyDetail}</p>
         <div className="progress-track" role="progressbar" aria-label={COPY.results.busyProgressLabel} aria-valuetext={COPY.results.busyProgressText}>
           <span />
         </div>
@@ -73,10 +72,9 @@ export function ResultsPanel({
 
   if (!response) {
     return (
-      <section className="card primary-card solo-card" aria-labelledby="no-result-heading">
-        <p className="section-kicker">{COPY.results.kicker}</p>
+      <section className="panel panel-pad solo-panel" aria-labelledby="no-result-heading">
         <h2 id="no-result-heading" ref={headingRef} tabIndex={-1}>{COPY.results.noResultHeading}</h2>
-        <p className="section-copy">{COPY.results.noResultDetail}</p>
+        <p className="stage-copy">{COPY.results.noResultDetail}</p>
         <div className="action-row">
           <button className="button secondary" type="button" onClick={onBackToSelection}>{COPY.solve.back}</button>
         </div>
@@ -89,14 +87,41 @@ export function ResultsPanel({
   const isUnsat = response.solver.satisfiability === "UNSAT";
   const hasSolutionTabs = response.solutions.length > 1;
 
+  const heading = isSat
+    ? COPY.results.headingSat
+    : isUnsat
+      ? COPY.results.headingUnsat
+      : COPY.results.headingUnknown;
+
+  const statusWord = response.solver.satisfiability === "SAT"
+    ? "Có lịch"
+    : response.solver.satisfiability === "UNSAT"
+      ? "Không có lịch"
+      : "Chưa xác định";
+
   return (
-    <section className="results-layout" aria-labelledby="results-heading">
-      <div className="card primary-card">
-        <p className="section-kicker">{COPY.results.kicker}</p>
-        <h2 id="results-heading" ref={headingRef} tabIndex={-1}>
-          {isSat ? COPY.results.validHeading : response.solver.satisfiability === "UNSAT" ? COPY.results.noScheduleHeading : COPY.results.uncertainHeading}
-        </h2>
-        <SolverSummaryCards response={response} />
+    <section aria-labelledby="results-heading">
+      <div className="panel panel-pad">
+        <div className="results-head">
+          <h2 id="results-heading" ref={headingRef} tabIndex={-1}>{heading}</h2>
+          <div className="result-actions">
+            {isSat && isDesktopApp() ? (
+              <button className="button primary compact" type="button" disabled={isSavingTimetable} onClick={onSaveTimetable}>
+                {isSavingTimetable ? COPY.results.savingTimetable : COPY.results.saveTimetable}
+              </button>
+            ) : null}
+            {!isLoadedDocument ? (
+              <button className="button secondary compact" type="button" onClick={onBackToSelection}>{COPY.results.changeSelection}</button>
+            ) : null}
+            <button className="button ghost compact" type="button" onClick={onReset}>{COPY.results.chooseAnotherFile}</button>
+          </div>
+        </div>
+
+        <p className="result-meta">
+          <span>{`${COPY.results.statusMeta}: ${statusWord}`}</span>
+          <span>{`${COPY.results.timeMeta}: ${formatMilliseconds(response.solver.solve_time_ms)}`}</span>
+          <span>{`${COPY.results.countMeta}: ${response.solver.solution_count}`}</span>
+        </p>
 
         {hasSolutionTabs ? (
           <SolutionTabs
@@ -113,69 +138,70 @@ export function ResultsPanel({
             aria-labelledby={hasSolutionTabs ? `solution-tab-${currentSolution.solution_index}` : undefined}
             tabIndex={hasSolutionTabs ? 0 : undefined}
           >
-            <OnlineStrip solution={currentSolution} />
+            <OnlineNote solution={currentSolution} />
             <WeekGrid solution={currentSolution} />
-            <MobileAgenda solution={currentSolution} />
+            <Agenda solution={currentSolution} />
+            {response.solutions.length > 1 ? (
+              <p className="stage-note">{COPY.results.movementHint}</p>
+            ) : null}
             <ResultDetails solution={currentSolution} />
           </div>
         ) : (
-          <div className="empty-state">
-            <strong>{COPY.results.emptyHeading}</strong>
-            <p>{COPY.results.emptyDetail}</p>
-            {isUnsat && isDesktopApp() && response.solver.formal_verification_token ? (
-              <div className="action-row">
-                <button
-                  className="button secondary"
-                  type="button"
-                  disabled={isExportingUnsat}
-                  onClick={onExportUnsat}
-                >
-                  {isExportingUnsat ? COPY.results.exportingUnsat : COPY.results.exportUnsat}
-                </button>
-              </div>
-            ) : null}
-            {isUnsat && response.parse_summary.partial_import ? (
-              <p>{COPY.results.partialUnsatDetail}</p>
-            ) : null}
-          </div>
+          <EmptyResult
+            response={response}
+            isUnsat={isUnsat}
+            onExportUnsat={onExportUnsat}
+            isExportingUnsat={isExportingUnsat}
+          />
         )}
 
         <ResultNotes response={response} isLoadedDocument={isLoadedDocument} />
       </div>
-
-      <aside className="card rail-card result-rail" aria-label={COPY.results.railLabel}>
-        {currentSolution ? <SolutionRail solution={currentSolution} /> : <EmptyRail text={COPY.results.emptyRail} />}
-        <div className="rail-actions">
-          {isSat && isDesktopApp() ? (
-            <button className="button primary" type="button" disabled={isSavingTimetable} onClick={onSaveTimetable}>
-              {isSavingTimetable ? COPY.results.savingTimetable : COPY.results.saveTimetable}
-            </button>
-          ) : null}
-          {!isLoadedDocument ? (
-            <button className="button secondary" type="button" onClick={onBackToSelection}>{COPY.results.changeSelection}</button>
-          ) : null}
-          <button className="button ghost" type="button" onClick={onReset}>{COPY.results.chooseAnotherFile}</button>
-        </div>
-      </aside>
     </section>
   );
 }
 
-function SolverSummaryCards({ response }: { response: RescheduleResponse }) {
-  const items = [
-    [COPY.results.summaryStatus, response.solver.satisfiability === "SAT" ? "Có lịch" : response.solver.satisfiability === "UNSAT" ? "Không có lịch" : "Chưa xác định"],
-    [COPY.results.summaryTime, formatMilliseconds(response.solver.solve_time_ms)],
-    [COPY.results.summaryCount, response.solver.solution_count],
-  ];
-
+function EmptyResult({
+  response,
+  isUnsat,
+  onExportUnsat,
+  isExportingUnsat,
+}: {
+  response: RescheduleResponse;
+  isUnsat: boolean;
+  onExportUnsat: () => void;
+  isExportingUnsat: boolean;
+}) {
   return (
-    <div className="metric-grid compact-metrics">
-      {items.map(([label, value]) => (
-        <div className="metric-card" key={label}>
-          <span>{label}</span>
-          <strong>{value}</strong>
-        </div>
-      ))}
+    <div className="empty-state">
+      <strong>{COPY.results.emptyHeading}</strong>
+      {response.solver.status === "timeout" ? (
+        <p>{COPY.results.timeoutDetail}</p>
+      ) : (
+        <>
+          <p>{COPY.results.emptyDetail}</p>
+          {isUnsat ? (
+            <ul className="guidance-list" aria-label={COPY.results.unsatGuidanceTitle}>
+              {COPY.results.unsatGuidance.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      )}
+      {isUnsat && isDesktopApp() && response.solver.formal_verification_token ? (
+        <button
+          className="button secondary"
+          type="button"
+          disabled={isExportingUnsat}
+          onClick={onExportUnsat}
+        >
+          {isExportingUnsat ? COPY.results.exportingUnsat : COPY.results.exportUnsat}
+        </button>
+      ) : null}
+      {isUnsat && response.parse_summary.partial_import ? (
+        <p>{COPY.results.partialUnsatDetail}</p>
+      ) : null}
     </div>
   );
 }
@@ -240,27 +266,25 @@ function SolutionTabs({
   );
 }
 
-function OnlineStrip({ solution }: { solution: NonNullable<RescheduleResponse["solutions"][number]> }) {
+function OnlineNote({ solution }: { solution: Solution }) {
   const sessions = onlineSessionsForSolution(solution);
   if (sessions.length === 0) {
     return null;
   }
 
   return (
-    <section className="online-strip" aria-label={COPY.results.onlineLabel}>
-      <strong>{COPY.results.online}</strong>
-      <div>
-        {sessions.map((session) => (
-          <span className="online-item" key={session.session_id}>
-            {session.course_code} · {session.lhp_code}
-          </span>
-        ))}
-      </div>
-    </section>
+    <p className="online-note" aria-label={COPY.results.onlineLabel}>
+      <strong>{COPY.results.online}: </strong>
+      {sessions.map((session) => (
+        <span key={session.session_id}>
+          {session.course_code} · {session.lhp_code}
+        </span>
+      ))}
+    </p>
   );
 }
 
-function WeekGrid({ solution }: { solution: NonNullable<RescheduleResponse["solutions"][number]> }) {
+function WeekGrid({ solution }: { solution: Solution }) {
   const sessions = physicalSessionsForSolution(solution);
 
   function focusSession(sessionId: string) {
@@ -271,92 +295,110 @@ function WeekGrid({ solution }: { solution: NonNullable<RescheduleResponse["solu
     target?.focus({ preventScroll: true });
   }
 
+  const covered = new Set<string>();
+  for (const session of sessions) {
+    const { start, span } = periodSpan(session);
+    const startIndex = PERIODS.indexOf(start as (typeof PERIODS)[number]);
+    for (let offset = 1; offset < Math.max(1, span); offset += 1) {
+      const followingPeriod = PERIODS[startIndex + offset];
+      if (followingPeriod) {
+        covered.add(`${session.day}|${followingPeriod}`);
+      }
+    }
+  }
+
   return (
     <section className="week-section" aria-label={COPY.results.weekLabel}>
-      <div className="week-grid" aria-label={COPY.results.weekGridLabel}>
-        <div className="grid-corner">{COPY.results.weekPeriodLabel}</div>
-        {DAYS.map((day) => (
-          <div className="grid-header" key={day}>{DAY_LABELS.get(day)}</div>
-        ))}
-        {PERIODS.map((period, periodIndex) => (
-          <div
-            className="grid-period"
-            key={period}
-            style={{ gridColumn: "1", gridRow: String(periodIndex + 2) }}
-          >
-            <strong>{PERIOD_LABELS.get(period)?.label}</strong>
-            <span>{PERIOD_LABELS.get(period)?.time}</span>
-          </div>
-        ))}
-        {PERIODS.flatMap((period, periodIndex) =>
-          DAYS.map((day, dayIndex) => (
-            <div
-              className="grid-cell"
-              aria-hidden="true"
-              key={`${day}-${period}`}
-              style={{ gridColumn: String(dayIndex + 2), gridRow: String(periodIndex + 2) }}
-            />
-          )),
-        )}
-        {sessions.map((session) => {
-          const { start, span } = periodSpan(session);
-          const column = DAYS.indexOf(session.day as (typeof DAYS)[number]) + 2;
-          const row = PERIODS.indexOf(start as (typeof PERIODS)[number]) + 2;
-          if (column < 2 || row < 2) {
-            return null;
-          }
-          return (
-            <button
-              className="session-block"
-              type="button"
-              key={session.session_id}
-              style={{ gridColumn: `${column} / span 1`, gridRow: `${row} / span ${span}` }}
-              aria-label={`${session.course_code}, ${session.lhp_code}, ${session.timeslot_label}, ${COPY.results.roomLabel} ${session.room_code}`}
-              onClick={() => focusSession(session.session_id)}
-            >
-              <strong>{session.course_code}</strong>
-              <span>{session.lhp_code}</span>
-              <small>{session.room_code}</small>
-            </button>
-          );
-        })}
+      <div className="week-scroll">
+        <table className="week-table" aria-label={COPY.results.weekGridLabel}>
+          <caption className="sr-only">{COPY.results.weekLabel}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{COPY.results.weekPeriodLabel}</th>
+              {DAYS.map((day) => (
+                <th scope="col" key={day}>{DAY_LABELS.get(day)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {PERIODS.map((period, periodIndex) => (
+              <tr key={period}>
+                <th scope="row" className="period-cell">
+                  <strong>{PERIOD_LABELS.get(period)?.label}</strong>
+                  <span>{PERIOD_LABELS.get(period)?.time}</span>
+                </th>
+                {DAYS.map((day) => {
+                  const session = sessions.find(
+                    (candidate) =>
+                      candidate.day === day
+                      && periodSpan(candidate).start === period,
+                  );
+                  if (!session) {
+                    if (covered.has(`${day}|${period}`)) {
+                      return null;
+                    }
+                    return <td className="cell-empty" key={`${day}-${period}`} />;
+                  }
+
+                  const { span } = periodSpan(session);
+                  return (
+                    <td key={`${day}-${period}`} rowSpan={Math.max(1, span)}>
+                      <button
+                        className="session-block"
+                        type="button"
+                        aria-label={`${session.course_code}, ${session.lhp_code}, ${session.timeslot_label}, ${COPY.results.roomLabel} ${session.room_code}`}
+                        onClick={() => focusSession(session.session_id)}
+                      >
+                        <strong>{session.course_code}</strong>
+                        <span>{session.lhp_code}</span>
+                        <small>{session.room_code}</small>
+                      </button>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </section>
   );
 }
 
-function MobileAgenda({ solution }: { solution: NonNullable<RescheduleResponse["solutions"][number]> }) {
+function Agenda({ solution }: { solution: Solution }) {
   const sessions = physicalSessionsForSolution(solution);
   if (sessions.length === 0) {
     return null;
   }
 
   return (
-    <section className="mobile-agenda" aria-label={COPY.results.mobileLabel}>
-      <h3>{COPY.results.mobileLabel}</h3>
-      {DAYS.map((day) => {
-        const daySessions = sessions.filter((session) => session.day === day);
-        if (daySessions.length === 0) {
-          return null;
-        }
-        return (
-          <div className="agenda-day" key={day}>
-            <strong>{DAY_LABELS.get(day)}</strong>
-            {daySessions.map((session) => (
-              <div className="agenda-item" key={session.session_id}>
-                <span>{session.timeslot_label}</span>
-                <strong>{session.course_code} · {session.lhp_code}</strong>
-                <small>{session.room_code}</small>
-              </div>
-            ))}
-          </div>
-        );
-      })}
-    </section>
+    <details className="agenda" open aria-label={COPY.results.agendaLabel}>
+      <summary>{COPY.results.agendaLabel}</summary>
+      <div className="agenda-body">
+        {DAYS.map((day) => {
+          const daySessions = sessions.filter((session) => session.day === day);
+          if (daySessions.length === 0) {
+            return null;
+          }
+          return (
+            <div className="agenda-day" key={day}>
+              <strong>{DAY_LABELS.get(day)}</strong>
+              {daySessions.map((session) => (
+                <div className="agenda-item" key={session.session_id}>
+                  <span>{session.timeslot_label}</span>
+                  <strong>{session.course_code} · {session.lhp_code}</strong>
+                  <small>{session.room_code}</small>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </details>
   );
 }
 
-function ResultDetails({ solution }: { solution: NonNullable<RescheduleResponse["solutions"][number]> }) {
+function ResultDetails({ solution }: { solution: Solution }) {
   return (
     <section className="details-section" aria-label={COPY.results.detailLabel}>
       <h3>{COPY.results.detailHeading}</h3>
@@ -370,7 +412,7 @@ function ResultDetails({ solution }: { solution: NonNullable<RescheduleResponse[
             <p>{anchor.teaching_team_label}</p>
           </header>
           {normalizedLhpSchedules(anchor).map((lhp) => (
-            <div className="lhp-group" key={lhp.lhp_code}>
+            <div className="lhp-block" key={lhp.lhp_code}>
               <h4>{lhp.lhp_code}</h4>
               <ul>
                 {lhp.matched_sessions.map((session) => (
@@ -422,19 +464,5 @@ function ResultNotes({
         ))}
       </ul>
     </section>
-  );
-}
-
-function SolutionRail({ solution }: { solution: NonNullable<RescheduleResponse["solutions"][number]> }) {
-  const stats = solutionStats(solution);
-  return (
-    <div className="solution-rail-content">
-      <span className="rail-label">{COPY.results.movementLabel}</span>
-      <strong className="movement-cost">{solution.movement_cost}</strong>
-      <div className="rail-stats">
-        <span className="rail-stat">{stats.lhpCount} LHP</span>
-        <span className="rail-stat">{stats.sessionCount} buổi</span>
-      </div>
-    </div>
   );
 }

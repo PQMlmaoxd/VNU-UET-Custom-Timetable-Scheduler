@@ -23,24 +23,24 @@ export function AppShell({
   return (
     <main className="app-shell">
       <a className="skip-link" href="#workspace">{COPY.accessibility.skipNavigation}</a>
-      <header className="app-header" aria-labelledby="app-title">
-        <div className="product-title">
+      <header className="app-bar" aria-labelledby="app-title">
+        <div className="brand">
           <img
-            className="product-mark"
+            className="brand-mark"
             src={logoUrl}
             alt=""
-            width={42}
-            height={32}
+            width={34}
+            height={26}
             aria-hidden="true"
           />
           <div>
-            <p className="eyebrow">{COPY.product.eyebrow}</p>
+            <p className="brand-sub">{COPY.product.brand}</p>
             <h1 id="app-title">{COPY.product.title}</h1>
           </div>
         </div>
-        <div className="header-actions">
+        <div className="bar-side">
           <ThemeControl preference={themePreference} onChange={onThemeChange} />
-          <div className="workbook-badge" aria-label={COPY.product.currentFile}>
+          <div className="file-chip" aria-label={COPY.product.currentFile}>
             <span>{COPY.product.currentFile}</span>
             <strong>{file?.name ?? COPY.product.noFile}</strong>
           </div>

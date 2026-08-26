@@ -640,10 +640,9 @@ function App() {
         ) : null}
 
         {clampedCurrentStep === 2 && loadedDocument && !workbook ? (
-          <section className="card primary-card solo-card" aria-labelledby="loaded-selection-heading">
-            <p className="section-kicker">{COPY.steps.selection}</p>
+          <section className="panel panel-pad solo-panel" aria-labelledby="loaded-selection-heading">
             <h2 id="loaded-selection-heading" ref={stageHeading} tabIndex={-1}>{COPY.results.loadedSelectionTitle}</h2>
-            <p className="section-copy">{COPY.results.loadedSelectionDetail}</p>
+            <p className="stage-copy">{COPY.results.loadedSelectionDetail}</p>
             <div className="action-row">
               <button className="button primary" type="button" onClick={() => setCurrentStep(3)}>
                 {COPY.results.loadedSelectionButton}

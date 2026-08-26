@@ -13,13 +13,15 @@ export function Notice({ status }: { status: AppStatus }) {
 
   return (
     <>
-      <section className="status-banner notice" data-tone={status.tone} aria-labelledby={titleId}>
-        <span className="status-dot" aria-hidden="true" />
-        <div>
-          <strong id={titleId}>{status.title}</strong>
-          <p>{status.detail}</p>
-        </div>
-      </section>
+      {status.tone !== "idle" ? (
+        <section className="notice status-banner" data-tone={status.tone} aria-labelledby={titleId}>
+          <span className="notice-dot" aria-hidden="true" />
+          <div>
+            <strong id={titleId}>{status.title}</strong>
+            <p>{status.detail}</p>
+          </div>
+        </section>
+      ) : null}
       <div
         className="sr-only status-live-region"
         role={status.tone === "error" ? "alert" : "status"}

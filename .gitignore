@@ -51,3 +51,9 @@ formal/spec/*.pdf
 scheduler/desktop/native/SolverWorker/third_party/cadical/makefile
 scheduler/desktop/native/SolverWorker/third_party/cadical/src/makefile
 *.log
+
+# Local AI design-tooling payload and design evidence (never committed)
+.impeccable/
+.opencode/
+/PRODUCT.md
+/DESIGN.md

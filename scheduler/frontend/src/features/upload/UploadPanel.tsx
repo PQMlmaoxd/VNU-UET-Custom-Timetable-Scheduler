@@ -11,6 +11,9 @@ type UploadPanelProps = {
   headingRef: RefObject<HTMLHeadingElement>;
 };
 
+const DESKTOP_FORMATS = ["XLSX", "PDF", "JSON"];
+const WEB_FORMATS = ["XLSX", "JSON"];
+
 export function UploadPanel({
   file,
   isLoading,
@@ -18,12 +21,13 @@ export function UploadPanel({
   onLoad,
   headingRef,
 }: UploadPanelProps) {
+  const formats = isDesktopApp() ? DESKTOP_FORMATS : WEB_FORMATS;
+
   return (
     <section className="upload-layout" aria-labelledby="upload-heading">
-      <div className="card primary-card">
-        <p className="section-kicker">{COPY.upload.kicker}</p>
+      <div className="panel panel-pad">
         <h2 id="upload-heading" ref={headingRef} tabIndex={-1}>{COPY.upload.heading}</h2>
-        <p className="section-copy">{COPY.upload.description}</p>
+        <p className="stage-copy">{COPY.upload.description}</p>
 
         <label
           className="dropzone"
@@ -47,9 +51,13 @@ export function UploadPanel({
             aria-label={COPY.upload.inputLabel}
             onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
           />
-          <span className="dropzone-mark" aria-hidden="true">XLSX</span>
           <strong>{file ? file.name : COPY.upload.emptyPrompt}</strong>
-          <span>{COPY.upload.supportedFormats(isDesktopApp())}</span>
+          <span className="dropzone-hint">{COPY.upload.supportedFormats(isDesktopApp())}</span>
+          <span className="format-row" aria-hidden="true">
+            {formats.map((format) => (
+              <span className="format-chip" key={format}>{format}</span>
+            ))}
+          </span>
         </label>
 
         <div className="action-row">

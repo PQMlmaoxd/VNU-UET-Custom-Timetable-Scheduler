@@ -3,7 +3,6 @@ import type { RefObject } from "react";
 import { COPY } from "../../copy";
 import type { DesiredAssignmentPayload, SelectionRow, SolveState } from "../../types";
 import { clampTimeout, TIMEOUT_MAX, TIMEOUT_MIN } from "../../utils";
-import { EmptyRail } from "../shared/EmptyRail";
 
 const TIMEOUT_PRESETS = [
   { label: COPY.solve.presets.quick, value: 30, note: COPY.solve.presets.quickNote },
@@ -35,18 +34,16 @@ export function SolvePanel({
   headingRef,
 }: SolvePanelProps) {
   return (
-    <section className="panel-grid" aria-labelledby="solve-heading">
-      <div className="card primary-card">
-        <p className="section-kicker">{COPY.solve.kicker}</p>
+    <section aria-labelledby="solve-heading">
+      <div className="panel panel-pad">
         <h2 id="solve-heading" ref={headingRef} tabIndex={-1}>{COPY.solve.heading}</h2>
-        <p className="section-copy">{COPY.solve.description}</p>
-        <p className="section-note">{COPY.solve.fixedScheduleNote}</p>
+        <p className="stage-copy">{COPY.solve.description}</p>
 
-        <fieldset className="timeout-fieldset">
+        <fieldset className="timeout-group">
           <legend>{COPY.solve.timeoutLegend}</legend>
-          <div className="preset-row" role="radiogroup" aria-label={COPY.solve.timeoutLegend}>
+          <div className="segmented" role="radiogroup" aria-label={COPY.solve.timeoutLegend}>
             {TIMEOUT_PRESETS.map((preset) => (
-              <label className="preset-option" data-active={timeoutSeconds === preset.value || undefined} key={preset.value}>
+              <label className="segment" data-active={timeoutSeconds === preset.value || undefined} key={preset.value}>
                 <input
                   className="sr-only"
                   type="radio"
@@ -55,10 +52,8 @@ export function SolvePanel({
                   checked={timeoutSeconds === preset.value}
                   onChange={() => onTimeoutChange(preset.value)}
                 />
-                <span className="preset-option-copy">
-                  <strong>{preset.label}</strong>
-                  <span>{preset.note}</span>
-                </span>
+                <strong>{preset.label}</strong>
+                <span>{preset.note}</span>
               </label>
             ))}
           </div>
@@ -75,6 +70,18 @@ export function SolvePanel({
           </label>
         </fieldset>
 
+        <p className="stage-note">{COPY.solve.fixedScheduleNote}</p>
+
+        <div className="summary-strip" aria-label={COPY.solve.summaryLabel}>
+          <span>{rows.length > 0 ? `${assignments.length}/${rows.length}` : "0"}</span>
+          {assignments.map((assignment) => (
+            <span className="chip" key={`${assignment.course_code}-${assignment.teaching_team_key}`}>
+              {assignment.course_code} · {assignment.teaching_team_label}
+            </span>
+          ))}
+          {assignments.length === 0 ? <span>{COPY.solve.emptySummary}</span> : null}
+        </div>
+
         <div className="action-row split">
           <button className="button secondary" type="button" onClick={onBack}>{COPY.solve.back}</button>
           <button
@@ -87,22 +94,6 @@ export function SolvePanel({
           </button>
         </div>
       </div>
-
-      <aside className="card rail-card" aria-label={COPY.solve.summaryLabel}>
-        <h3>{COPY.solve.summaryHeading(assignments.length, rows.length)}</h3>
-        {assignments.length > 0 ? (
-          <ul className="compact-list">
-            {assignments.map((assignment) => (
-              <li key={`${assignment.course_code}-${assignment.teaching_team_key}`}>
-                <strong>{assignment.course_code}</strong>
-                <span>{assignment.teaching_team_label}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <EmptyRail text={COPY.solve.emptySummary} />
-        )}
-      </aside>
     </section>
   );
 }
