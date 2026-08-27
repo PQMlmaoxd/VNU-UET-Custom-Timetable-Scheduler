@@ -45,7 +45,7 @@ There are two constraint layers in the application:
 - **Layer A (Workbook integrity):** `HC-1..HC-6`
   - Used to validate the timetable itself (existing assignments).
   - Implemented by `TimetableValidator.Validate(...)`.
-- **Layer B (Personal selector correctness):** `PT-1..PT-7`
+- **Layer B (Personal selector correctness):** `PT-1..PT-8`
   - Used to validate each personal selection solution.
   - Implemented by `TimetableValidator.ValidatePersonalTimetable(...)`.
 
@@ -215,6 +215,16 @@ Any timeslot from one chosen LHP must be non-overlapping with every timeslot fro
 ### PT-7: No unexpected requests in output
 
 The solution cannot contain a teaching-team request that was not requested by the user.
+
+### PT-8: Locked class section must be honored
+
+A request may optionally carry a lock given by `locked_lhp_code` and
+`locked_teaching_unit_key`. Both fields must be present together or both absent.
+The lock narrows that request's candidate set to the single locked teaching unit,
+so the chosen LHP for that request must be exactly the locked `(lhp_code,
+teaching_unit_key)`. If no current candidate matches the locked pair, the request
+is rejected before solving; otherwise any conflict still surfaces as UNSAT with
+dedicated guidance instead of an automatic substitute.
 
 ---
 

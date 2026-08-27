@@ -156,7 +156,7 @@ The procedure continues until one of the following conditions holds:
 
 The SAT encoding is followed by an independent validator. This validator defines the hard correctness conditions for the personal timetable output.
 
-\subsection{Personal-Timetable Constraints (PT-1 to PT-7)}
+\subsection{Personal-Timetable Constraints (PT-1 to PT-8)}
 \begin{itemize}
     \item \textbf{PT-1: Exactly one teaching unit per selected request.} Each requested $(course\_code, teaching\_team\_key)$ must produce exactly one chosen teaching unit.
     \item \textbf{PT-2: Candidate membership.} The chosen teaching unit must belong to the candidate set of the requested teaching-team request.
@@ -165,6 +165,7 @@ The SAT encoding is followed by an independent validator. This validator defines
     \item \textbf{PT-5: No session reuse.} A session identifier cannot be reused across multiple selected teaching-team requests.
     \item \textbf{PT-6: No overlap among selected LHPs.} The chosen personal timetable must be pairwise non-overlapping under \eqref{eq:overlap}.
     \item \textbf{PT-7: No unexpected requests.} The output cannot contain a teaching-team request that was not explicitly selected by the user.
+    \item \textbf{PT-8: Locked class section honored.} A request that carries a lock (\texttt{locked\_lhp\_code}, \texttt{locked\_teaching\_unit\_key}) replaces its candidate set with the single locked teaching unit; the chosen candidate must be exactly that unit, and the result is UNSAT when it conflicts.
 \end{itemize}
 
 A personal timetable solution is considered valid only if all PT constraints hold.
