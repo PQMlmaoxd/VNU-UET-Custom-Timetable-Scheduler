@@ -34,6 +34,7 @@ import type {
 } from "./types";
 import {
   TIMEOUT_DEFAULT,
+  buildAnchorCandidateIndex,
   buildCourseCatalog,
   clampTimeout,
   hasIncompleteSelections,
@@ -73,6 +74,7 @@ function App() {
   const [loadedDocument, setLoadedDocument] = useState<LoadedTimetableDocument | null>(null);
   const [isExportingUnsat, setIsExportingUnsat] = useState(false);
   const [isSavingTimetable, setIsSavingTimetable] = useState(false);
+  const [solvedWithLockedSections, setSolvedWithLockedSections] = useState(false);
   const [solutionIndex, setSolutionIndex] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
   const solveCancellation = useRef<AbortController | null>(null);
@@ -87,6 +89,7 @@ function App() {
     () => workbook ? buildCourseCatalog(workbook.prototype_catalog.anchors) : [],
     [workbook],
   );
+  const anchorCandidates = useMemo(() => buildAnchorCandidateIndex(workbook?.anchor_candidates), [workbook]);
   const assignments = useMemo(() => selectedAssignments(rows), [rows]);
   const hasIncompleteRows = hasIncompleteSelections(rows);
   const fatalWarningCount = workbook?.parse_summary.fatal_warning_count ?? 0;
@@ -318,6 +321,8 @@ function App() {
               course_name: course.course_name,
               teaching_team_key: course.lecturers.length === 1 ? course.lecturers[0].teaching_team_key : "",
               teaching_team_label: course.lecturers.length === 1 ? course.lecturers[0].teaching_team_label : "",
+              locked_lhp_code: undefined,
+              locked_unit_key: undefined,
             }
           : row,
       ),
@@ -338,8 +343,25 @@ function App() {
           ...row,
           teaching_team_key: team?.teaching_team_key ?? "",
           teaching_team_label: team?.teaching_team_label ?? "",
+          locked_lhp_code: undefined,
+          locked_unit_key: undefined,
         };
       }),
+    );
+    resetSolveOnly();
+  }
+
+  function updateLock(rowId: string, lockedLhpCode: string | null, lockedUnitKey: string | null) {
+    setRows((currentRows) =>
+      currentRows.map((row) =>
+        row.id === rowId
+          ? {
+              ...row,
+              locked_lhp_code: lockedLhpCode ?? undefined,
+              locked_unit_key: lockedUnitKey ?? undefined,
+            }
+          : row,
+      ),
     );
     resetSolveOnly();
   }
@@ -355,6 +377,8 @@ function App() {
               course_name: "",
               teaching_team_key: "",
               teaching_team_label: "",
+              locked_lhp_code: undefined,
+              locked_unit_key: undefined,
             }
           : row,
       ),
@@ -417,6 +441,7 @@ function App() {
       setCurrentStep(2);
       return;
     }
+    setSolvedWithLockedSections(desiredAssignments.some((a) => Boolean(a.locked_lhp_code)));
 
     if (workbook.parse_summary.fatal_warning_count > 0) {
       setStatus({
@@ -631,6 +656,8 @@ function App() {
             onCourseChange={updateCourse}
             onCourseClear={clearCourse}
             onLecturerChange={updateTeachingTeam}
+            anchorCandidates={anchorCandidates}
+            onLockChange={updateLock}
             onAdd={addSelectionRow}
             onRemove={removeSelectionRow}
             hasIncompleteRows={hasIncompleteRows}
@@ -679,6 +706,7 @@ function App() {
             onSaveTimetable={saveTimetable}
             isSavingTimetable={isSavingTimetable}
             isLoadedDocument={Boolean(loadedDocument)}
+            hasLockedSelections={solvedWithLockedSections}
             onBackToSelection={returnToSelection}
             onReset={() => resetWorkbookState(null)}
             headingRef={stageHeading}

@@ -1,4 +1,6 @@
 import type {
+  AnchorCandidateGroup,
+  AnchorLhpCandidate,
   AnchorCatalogItem,
   CourseCatalogItem,
   DesiredAnchorSummary,
@@ -119,7 +121,44 @@ export function selectedAssignments(rows: SelectionRow[]): DesiredAssignmentPayl
       course_name: row.course_name,
       teaching_team_key: row.teaching_team_key,
       teaching_team_label: row.teaching_team_label,
+      ...(row.locked_lhp_code && row.locked_unit_key
+        ? {
+            locked_lhp_code: row.locked_lhp_code,
+            locked_teaching_unit_key: row.locked_unit_key,
+          }
+        : {}),
     }));
+}
+
+export function buildAnchorCandidateIndex(
+  groups: AnchorCandidateGroup[] | undefined,
+): Map<string, AnchorLhpCandidate[]> {
+  const index = new Map<string, AnchorLhpCandidate[]>();
+  if (!groups) {
+    return index;
+  }
+
+  for (const group of groups) {
+    index.set(anchorCandidateIndexKey(group.course_code, group.teaching_team_key), group.candidates);
+  }
+  return index;
+}
+
+export function anchorCandidateIndexKey(courseCode: string, teachingTeamKey: string): string {
+  return `${courseCode}\u0000${teachingTeamKey}`;
+}
+
+export function lhpOptionLabel(candidate: AnchorLhpCandidate): string {
+  const slots = candidate.slots.map((slot) => {
+    if (slot.day === null || slot.day === undefined) {
+      return "Online";
+    }
+    const dayLabel = DAY_LABELS.get(slot.day) ?? `Thứ ${slot.day}`;
+    const periodCode = slot.period_code ?? "";
+    const periodLabel = PERIOD_LABELS.get(periodCode)?.label ?? (periodCode ? `Ca ${periodCode}` : "");
+    return periodLabel ? `${dayLabel} ${periodLabel}` : dayLabel;
+  });
+  return `${candidate.lhp_code} · ${compactList(slots)} · ${candidate.session_count} buổi`;
 }
 
 export function hasIncompleteSelections(rows: SelectionRow[]): boolean {

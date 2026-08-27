@@ -41,6 +41,24 @@ export const validateResponse = {
     missing_session_count: 0,
     sample_violations: [],
   },
+  anchor_candidates: [
+    {
+      course_code: "INT2213",
+      teaching_team_key: "team-nguyen-a",
+      teaching_team_label: "Nguyễn A",
+      candidates: [
+        {
+          lhp_code: "INT2213-01",
+          teaching_unit_key: "unit:int2213-01",
+          session_count: 2,
+          slots: [
+            { day: 2, period_code: "1", timeslot_label: "Thứ 2 Ca 1" },
+            { day: null, period_code: null, timeslot_label: "Online" },
+          ],
+        },
+      ],
+    },
+  ],
 };
 
 export const solveSessionOne = {

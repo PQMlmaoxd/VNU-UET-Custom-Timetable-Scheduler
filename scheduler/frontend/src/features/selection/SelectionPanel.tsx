@@ -2,12 +2,13 @@ import { useEffect, useId, useRef, useState, type RefObject } from "react";
 
 import { COPY } from "../../copy";
 import type {
+  AnchorLhpCandidate,
   CourseCatalogItem,
   DesiredAssignmentPayload,
   SelectionRow,
   ValidateExistingResponse,
 } from "../../types";
-import { courseLabel, matchingCourses } from "../../utils";
+import { anchorCandidateIndexKey, courseLabel, lhpOptionLabel, matchingCourses } from "../../utils";
 
 type SelectionPanelProps = {
   catalog: CourseCatalogItem[];
@@ -21,6 +22,8 @@ type SelectionPanelProps = {
   onCourseChange: (rowId: string, course: CourseCatalogItem) => void;
   onCourseClear: (rowId: string) => void;
   onLecturerChange: (rowId: string, teachingTeamKey: string) => void;
+  anchorCandidates: Map<string, AnchorLhpCandidate[]>;
+  onLockChange: (rowId: string, lockedLhpCode: string | null, lockedUnitKey: string | null) => void;
   onAdd: () => void;
   onRemove: (rowId: string) => void;
   hasIncompleteRows: boolean;
@@ -40,6 +43,8 @@ export function SelectionPanel({
   onCourseChange,
   onCourseClear,
   onLecturerChange,
+  anchorCandidates,
+  onLockChange,
   onAdd,
   onRemove,
   hasIncompleteRows,
@@ -107,6 +112,9 @@ export function SelectionPanel({
           {rows.map((row, index) => {
             const selectedKeys = new Set(rows.filter((item) => item.id !== row.id).map((item) => item.courseKey).filter(Boolean));
             const selectedCourse = catalog.find((course) => course.key === row.courseKey) ?? null;
+            const lockCandidates = selectedCourse && row.teaching_team_key
+              ? anchorCandidates.get(anchorCandidateIndexKey(row.course_code, row.teaching_team_key)) ?? []
+              : [];
             return (
               <fieldset className="request-row" key={row.id}>
                 <legend className="sr-only">{COPY.selection.rowLabel(index + 1)}</legend>
@@ -133,6 +141,24 @@ export function SelectionPanel({
                     ))}
                   </select>
                 </label>
+                <label className="field">
+                  <span>{COPY.selection.lockLabel}</span>
+                  <select
+                    value={row.locked_unit_key ?? ""}
+                    disabled={!row.teaching_team_key || lockCandidates.length === 0}
+                    onChange={(event) => {
+                      const picked = lockCandidates.find((candidate) => candidate.teaching_unit_key === event.target.value) ?? null;
+                      onLockChange(row.id, picked?.lhp_code ?? null, picked?.teaching_unit_key ?? null);
+                    }}
+                  >
+                    <option value="">{COPY.selection.lockAuto}</option>
+                    {lockCandidates.map((candidate) => (
+                      <option key={candidate.teaching_unit_key} value={candidate.teaching_unit_key}>
+                        {lhpOptionLabel(candidate)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <button className="button ghost compact" type="button" onClick={() => onRemove(row.id)} aria-label={COPY.selection.removeCourse(index + 1)}>
                   {COPY.selection.removeButton}
                 </button>
@@ -152,6 +178,7 @@ export function SelectionPanel({
           {assignments.map((assignment) => (
             <span className="chip" key={`${assignment.course_code}-${assignment.teaching_team_key}`}>
               {assignment.course_code} · {assignment.teaching_team_label}
+              {assignment.locked_lhp_code ? ` · ${COPY.selection.lockChipSuffix(assignment.locked_lhp_code)}` : ""}
             </span>
           ))}
           {assignments.length === 0 ? <span>{COPY.selection.emptySummary}</span> : null}

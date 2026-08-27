@@ -88,6 +88,17 @@ const validateResponse = {
     missing_session_count: 0,
     sample_violations: [],
   },
+  anchor_candidates: [{
+    course_code: "INT1000",
+    teaching_team_key: "team-alice",
+    teaching_team_label: "Alice",
+    candidates: [{
+      lhp_code: "LHP-1",
+      teaching_unit_key: "unit-int1000-1",
+      session_count: 1,
+      slots: [{ day: 2, period_code: "1", timeslot_label: "Thứ 2 Ca 1" }],
+    }],
+  }],
 };
 
 const partialTimeoutSession = {
@@ -121,8 +132,10 @@ const partialTimeoutAssignment = {
   }],
 };
 
+const { anchor_candidates: _rescheduleHasNoCandidates, ...validateOnlyFields } = validateResponse;
+void _rescheduleHasNoCandidates;
 const partialTimeoutResponse = {
-  ...validateResponse,
+  ...validateOnlyFields,
   mode: "reschedule",
   department: "CNTT",
   desired_assignments: [partialTimeoutAssignment],
@@ -199,6 +212,67 @@ describe("desktop bridge API", () => {
     }));
 
     await expect(validation).resolves.toMatchObject(validateResponse);
+  });
+
+  it("rejects validate responses without anchor candidates", async () => {
+    const webView = new FakeDesktopWebView();
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: webView },
+    });
+    const workbook = {
+      name: "schedule.xlsx",
+      arrayBuffer: async () => new TextEncoder().encode("workbook").buffer,
+    } as File;
+    const validation = validateWorkbook(workbook);
+
+    await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
+    const request = webView.messages[0] as { id: string };
+    const { anchor_candidates: _omitted, ...withoutCandidates } = validateResponse;
+    void _omitted;
+    webView.respond(JSON.stringify({
+      protocol_version: 1,
+      id: request.id,
+      ok: true,
+      result: withoutCandidates,
+      error: null,
+    }));
+
+    await expect(validation).rejects.toThrow("invalid result");
+  });
+
+  it("rejects malformed anchor candidate metadata", async () => {
+    const webView = new FakeDesktopWebView();
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: webView },
+    });
+    const workbook = {
+      name: "schedule.xlsx",
+      arrayBuffer: async () => new TextEncoder().encode("workbook").buffer,
+    } as File;
+    const validation = validateWorkbook(workbook);
+
+    await vi.waitFor(() => expect(webView.messages).toHaveLength(1));
+    const request = webView.messages[0] as { id: string };
+    webView.respond(JSON.stringify({
+      protocol_version: 1,
+      id: request.id,
+      ok: true,
+      result: {
+        ...validateResponse,
+        anchor_candidates: [{
+          ...validateResponse.anchor_candidates[0],
+          candidates: [{
+            ...validateResponse.anchor_candidates[0].candidates[0],
+            slots: [{ day: "x", period_code: "1", timeslot_label: "Thứ 2 Ca 1" }],
+          }],
+        }],
+      },
+      error: null,
+    }));
+
+    await expect(validation).rejects.toThrow("invalid result");
   });
 
   it("cancels an active desktop workbook validation when the caller aborts", async () => {

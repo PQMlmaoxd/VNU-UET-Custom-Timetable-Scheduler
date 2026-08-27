@@ -1,4 +1,7 @@
 import type {
+  AnchorCandidateGroup,
+  AnchorCandidateSlot,
+  AnchorLhpCandidate,
   DesiredAssignmentPayload,
   DesiredAnchorSummary,
   RescheduleResponse,
@@ -333,11 +336,53 @@ function isValidateExistingResponse(value: unknown): value is ValidateExistingRe
       "parse_summary",
       "prototype_catalog",
       "existing_schedule_validation",
+      "anchor_candidates",
     ])
     && value.mode === "validate_existing"
     && isParseSummary(value.parse_summary)
     && isPrototypeCatalog(value.prototype_catalog)
-    && isValidationSummary(value.existing_schedule_validation);
+    && isValidationSummary(value.existing_schedule_validation)
+    && Array.isArray(value.anchor_candidates)
+    && value.anchor_candidates.every(isAnchorCandidateGroup);
+}
+
+function isAnchorCandidateGroup(value: unknown): value is AnchorCandidateGroup {
+  return isRecord(value)
+    && hasOnlyKeys(value, ["course_code", "teaching_team_key", "teaching_team_label", "candidates"])
+    && isWellFormedString(value.course_code)
+    && isNonEmptyString(value.course_code)
+    && isWellFormedString(value.teaching_team_key)
+    && isNonEmptyString(value.teaching_team_key)
+    && isWellFormedString(value.teaching_team_label)
+    && isNonEmptyString(value.teaching_team_label)
+    && Array.isArray(value.candidates)
+    && value.candidates.every(isAnchorLhpCandidate);
+}
+
+function isAnchorLhpCandidate(value: unknown): value is AnchorLhpCandidate {
+  return isRecord(value)
+    && hasOnlyKeys(value, ["lhp_code", "teaching_unit_key", "session_count", "slots"])
+    && isWellFormedString(value.lhp_code)
+    && isNonEmptyString(value.lhp_code)
+    && isWellFormedString(value.teaching_unit_key)
+    && isNonEmptyString(value.teaching_unit_key)
+    && typeof value.session_count === "number"
+    && Number.isInteger(value.session_count)
+    && value.session_count >= 0
+    && Array.isArray(value.slots)
+    && value.slots.length > 0
+    && value.slots.every(isAnchorCandidateSlot);
+}
+
+function isAnchorCandidateSlot(value: unknown): value is AnchorCandidateSlot {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["day", "period_code", "timeslot_label"])) {
+    return false;
+  }
+  const dayOk = (value.day === null)
+    || (typeof value.day === "number" && Number.isInteger(value.day));
+  const periodCode = value.period_code;
+  const periodOk = periodCode === null || isWellFormedString(periodCode);
+  return dayOk && periodOk && isWellFormedString(value.timeslot_label) && isNonEmptyString(value.timeslot_label);
 }
 
 function isBaseTimetableResponse(value: unknown): value is Record<string, unknown> {

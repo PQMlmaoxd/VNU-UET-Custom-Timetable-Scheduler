@@ -113,6 +113,27 @@ export type ValidateExistingResponse = {
   parse_summary: ParseSummary;
   prototype_catalog: PrototypeCatalog;
   existing_schedule_validation: ValidationSummary;
+  anchor_candidates: AnchorCandidateGroup[];
+};
+
+export type AnchorCandidateSlot = {
+  day: number | null;
+  period_code: string | null;
+  timeslot_label: string;
+};
+
+export type AnchorLhpCandidate = {
+  lhp_code: string;
+  teaching_unit_key: string;
+  session_count: number;
+  slots: AnchorCandidateSlot[];
+};
+
+export type AnchorCandidateGroup = {
+  course_code: string;
+  teaching_team_key: string;
+  teaching_team_label: string;
+  candidates: AnchorLhpCandidate[];
 };
 
 export type RescheduleResponse = {
@@ -166,6 +187,8 @@ export type SelectionRow = {
   course_name: string;
   teaching_team_key: string;
   teaching_team_label: string;
+  locked_lhp_code?: string;
+  locked_unit_key?: string;
 };
 
 export type DesiredAssignmentPayload = {
@@ -173,6 +196,8 @@ export type DesiredAssignmentPayload = {
   course_name: string;
   teaching_team_key: string;
   teaching_team_label: string;
+  locked_lhp_code?: string;
+  locked_teaching_unit_key?: string;
 };
 
 export type StatusTone = "idle" | "busy" | "success" | "warning" | "error";

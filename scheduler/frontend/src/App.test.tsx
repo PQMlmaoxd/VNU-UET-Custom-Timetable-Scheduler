@@ -96,6 +96,24 @@ const workbookResponse = {
     missing_session_count: 0,
     sample_violations: [],
   },
+  anchor_candidates: [
+    {
+      course_code: "INT2213",
+      teaching_team_key: "team-nguyen-a",
+      teaching_team_label: "Nguyễn A",
+      candidates: [
+        {
+          lhp_code: "INT2213-01",
+          teaching_unit_key: "unit:int2213-01",
+          session_count: 2,
+          slots: [
+            { day: 2, period_code: "1", timeslot_label: "Thứ 2 Ca 1" },
+            { day: null, period_code: null, timeslot_label: "Online" },
+          ],
+        },
+      ],
+    },
+  ],
 };
 
 const partialWorkbookResponse = {
@@ -467,6 +485,30 @@ describe("App", () => {
 
     expect(screen.getByText(COPY.selection.incomplete)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: COPY.selection.continue })).toBeDisabled();
+  });
+
+  it("locks a class section from the selection row and resets it when the course changes", async () => {
+    const user = userEvent.setup();
+    mockDesktopBridge();
+    render(<App />);
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(fileInput, makeTimetableFile("xlsx", "timetable.xlsx"));
+    await user.click(screen.getByRole("button", { name: COPY.upload.readButton }));
+    const courseInput = await screen.findByPlaceholderText(COPY.selection.coursePlaceholder);
+    await user.click(courseInput);
+    await user.click(screen.getByRole("option", { name: /INT2213/i }));
+
+    const lockSelect = screen.getByRole("combobox", { name: COPY.selection.lockLabel }) as HTMLSelectElement;
+    expect(lockSelect).toBeEnabled();
+
+    await user.selectOptions(screen.getByRole("combobox", { name: COPY.selection.lecturerLabel }), "team-nguyen-a");
+    await user.selectOptions(lockSelect, "unit:int2213-01");
+    expect(document.body.textContent).toMatch(/khóa INT2213-01/);
+
+    await user.selectOptions(screen.getByRole("combobox", { name: COPY.selection.lecturerLabel }), "");
+    expect(lockSelect).toBeDisabled();
+    expect(document.body.textContent).not.toMatch(/khóa INT2213-01/);
   });
 
   it("shows partial import details without blocking complete selections", async () => {

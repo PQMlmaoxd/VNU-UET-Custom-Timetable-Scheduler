@@ -58,6 +58,47 @@ test("happy path is keyboard-readable and has no critical/serious axe issues", a
   expect(seriousViolations).toEqual([]);
 });
 
+test("locks a class section and sends the locked selection to the solver", async ({ page }) => {
+  await page.goto("/app/");
+  await page.setInputFiles('input[type="file"]', {
+    name: "timetable.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: Buffer.from("mock workbook"),
+  });
+
+  await page.getByRole("button", { name: "Đọc thời khóa biểu" }).click();
+  await expect(page.getByRole("heading", { name: /Chọn môn và nhóm giảng dạy/ })).toBeVisible();
+
+  const lockSelect = page.getByRole("combobox", { name: "Khóa lớp học phần" });
+  await expect(lockSelect).toBeDisabled();
+
+  await page.getByPlaceholder(/Tìm theo mã hoặc tên môn/).fill("mang may");
+  await page.getByRole("option", { name: /INT2213/ }).click();
+  await expect(lockSelect).toBeEnabled();
+  await expect(lockSelect).toContainText(/INT2213-01 · .* · 2 buổi/u);
+
+  await lockSelect.selectOption("unit:int2213-01");
+  await expect(page.locator(".summary-strip")).toContainText("khóa INT2213-01");
+
+  await page.getByRole("button", { name: "Tiếp tục" }).click();
+  await page.getByRole("button", { name: "Tìm thời khóa biểu" }).click();
+
+  await expect(page.getByRole("heading", { name: "Đã tìm thấy lịch" })).toBeVisible();
+
+  const solveRequest = await page.evaluate(() => {
+    const bridgeWindow = window as Window & {
+      __schedulerBridgeRequests?: Array<{ method: string; payload?: { desired_assignments?: Array<Record<string, unknown>> } }>;
+    };
+    return bridgeWindow.__schedulerBridgeRequests?.find(request => request.method === "solve_workbook");
+  });
+  expect(solveRequest?.payload?.desired_assignments?.[0]).toMatchObject({
+    course_code: "INT2213",
+    teaching_team_key: "team-nguyen-a",
+    locked_lhp_code: "INT2213-01",
+    locked_teaching_unit_key: "unit:int2213-01",
+  });
+});
+
 test("loads a saved JSON timetable directly into results", async ({ page }, testInfo) => {
   await loadResultsFromSavedJson(page);
   await expect(page.getByRole("heading", { name: /Chọn môn và nhóm giảng dạy/ })).not.toBeVisible();

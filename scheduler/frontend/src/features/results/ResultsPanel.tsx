@@ -30,6 +30,7 @@ type ResultsPanelProps = {
   onSaveTimetable: () => void;
   isSavingTimetable: boolean;
   isLoadedDocument: boolean;
+  hasLockedSelections: boolean;
   onBackToSelection: () => void;
   onReset: () => void;
   headingRef: RefObject<HTMLHeadingElement>;
@@ -50,6 +51,7 @@ export function ResultsPanel({
   onSaveTimetable,
   isSavingTimetable,
   isLoadedDocument,
+  hasLockedSelections,
   onBackToSelection,
   onReset,
   headingRef,
@@ -150,6 +152,7 @@ export function ResultsPanel({
           <EmptyResult
             response={response}
             isUnsat={isUnsat}
+            hasLockedSelections={hasLockedSelections}
             onExportUnsat={onExportUnsat}
             isExportingUnsat={isExportingUnsat}
           />
@@ -164,25 +167,30 @@ export function ResultsPanel({
 function EmptyResult({
   response,
   isUnsat,
+  hasLockedSelections,
   onExportUnsat,
   isExportingUnsat,
 }: {
   response: RescheduleResponse;
   isUnsat: boolean;
+  hasLockedSelections: boolean;
   onExportUnsat: () => void;
   isExportingUnsat: boolean;
 }) {
   return (
     <div className="empty-state">
-      <strong>{COPY.results.emptyHeading}</strong>
+      <strong>{hasLockedSelections && isUnsat ? COPY.results.unsatLockedHeading : COPY.results.emptyHeading}</strong>
       {response.solver.status === "timeout" ? (
         <p>{COPY.results.timeoutDetail}</p>
       ) : (
         <>
-          <p>{COPY.results.emptyDetail}</p>
+          {isUnsat && hasLockedSelections ? <p>{COPY.results.unsatLockedDetail}</p> : <p>{COPY.results.emptyDetail}</p>}
           {isUnsat ? (
-            <ul className="guidance-list" aria-label={COPY.results.unsatGuidanceTitle}>
-              {COPY.results.unsatGuidance.map((item) => (
+            <ul
+              className="guidance-list"
+              aria-label={COPY.results.unsatGuidanceTitle}
+            >
+              {(hasLockedSelections ? COPY.results.unsatLockGuidance : COPY.results.unsatGuidance).map((item) => (
                 <li key={item}>{item}</li>
               ))}
             </ul>

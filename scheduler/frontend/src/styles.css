@@ -348,7 +348,7 @@ h4 { font-size: 13px; }
 .request-list { display: grid; gap: 10px; margin: 16px 0; }
 .request-row {
   display: grid;
-  grid-template-columns: 28px minmax(240px, 1.4fr) minmax(200px, 1fr) auto;
+  grid-template-columns: 28px minmax(220px, 1.3fr) minmax(170px, 1fr) minmax(190px, 1fr) auto;
   gap: 12px;
   align-items: end;
   margin: 0;
