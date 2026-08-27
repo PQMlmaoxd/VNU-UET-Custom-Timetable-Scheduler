@@ -122,6 +122,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
                 "Không thể tìm thời khóa biểu vì có dòng lịch bị thiếu hoặc sai thông tin bắt buộc. Hãy chọn file đã hoàn chỉnh.");
         }
         var desiredAssignments = requestedAssignments.Select(assignment => assignment.ToDomain()).ToImmutableArray();
+        EnsureLockedSelectionsExist(parseResult.Problem, desiredAssignments);
         var preparedSelection = PersonalSelectionPreparation.Create(
             parseResult.Problem,
             desiredAssignments,
@@ -217,6 +218,7 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         }
 
         var desiredAssignments = requestedAssignments.Select(assignment => assignment.ToDomain()).ToImmutableArray();
+        EnsureLockedSelectionsExist(parseResult.Problem, desiredAssignments);
         var preparedSelection = PersonalSelectionPreparation.Create(
             parseResult.Problem,
             desiredAssignments,
@@ -1255,6 +1257,68 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
             {
                 throw new DesktopBridgeException("Thông tin môn học hoặc nhóm giảng dạy vượt quá giới hạn cho phép.");
             }
+
+            ValidateLockedSelection(assignment.LockedLhpCode, assignment.LockedTeachingUnitKey);
+        }
+    }
+
+    private static void ValidateLockedSelection(string? lockedLhpCode, string? lockedTeachingUnitKey)
+    {
+        var hasLhp = !string.IsNullOrWhiteSpace(lockedLhpCode);
+        var hasUnitKey = !string.IsNullOrWhiteSpace(lockedTeachingUnitKey);
+        if (hasLhp != hasUnitKey)
+        {
+            throw new DesktopBridgeException("Khóa lớp học phần không hợp lệ.");
+        }
+
+        if (!hasLhp)
+        {
+            return;
+        }
+
+        if (!IsWellFormedString(lockedLhpCode) || !IsWellFormedString(lockedTeachingUnitKey))
+        {
+            throw new DesktopBridgeException("Khóa lớp học phần chứa ký tự không được hỗ trợ.");
+        }
+
+        if (lockedLhpCode!.Length > MaxAssignmentFieldCharacters ||
+            lockedTeachingUnitKey!.Length > MaxAssignmentFieldCharacters)
+        {
+            throw new DesktopBridgeException("Khóa lớp học phần vượt quá giới hạn cho phép.");
+        }
+    }
+
+    private static void EnsureLockedSelectionsExist(
+        Scheduler.Domain.SchedulingProblem problem,
+        ImmutableArray<Scheduler.Domain.DesiredAnchorAssignment> desiredAssignments)
+    {
+        if (desiredAssignments.All(assignment => !assignment.HasLockedLhp))
+        {
+            return;
+        }
+
+        var catalog = TeachingUnitCatalog.Create(problem, CancellationToken.None);
+        foreach (var assignment in desiredAssignments)
+        {
+            if (!assignment.HasLockedLhp)
+            {
+                continue;
+            }
+
+            var units = catalog.FindUnits(
+                assignment.CourseCode,
+                assignment.TeachingTeamKey,
+                assignment.DisplayTeachingTeam);
+            var matched = units.FirstOrDefault(unit =>
+                string.Equals(unit.LhpCode, assignment.LockedLhpCode, StringComparison.Ordinal) &&
+                (string.IsNullOrWhiteSpace(assignment.LockedTeachingUnitKey) ||
+                 string.Equals(unit.Key, assignment.LockedTeachingUnitKey, StringComparison.Ordinal)));
+            if (matched is null)
+            {
+                throw new DesktopBridgeException(
+                    "Lớp học phần đã khóa không còn trong danh sách lớp của nhóm giảng dạy này. " +
+                    "Hãy bỏ khóa hoặc chọn nhóm giảng dạy khác.");
+            }
         }
     }
 
@@ -1310,7 +1374,9 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
         [property: JsonPropertyName("course_name")] string? CourseName,
         [property: JsonPropertyName("teaching_team_key")] string? TeachingTeamKey = null,
         [property: JsonPropertyName("teaching_team_label")] string? TeachingTeamLabel = null,
-        [property: JsonPropertyName("lecturer_name")] string? LegacyLecturerName = null)
+        [property: JsonPropertyName("lecturer_name")] string? LegacyLecturerName = null,
+        [property: JsonPropertyName("locked_lhp_code")] string? LockedLhpCode = null,
+        [property: JsonPropertyName("locked_teaching_unit_key")] string? LockedTeachingUnitKey = null)
     {
         public Scheduler.Domain.DesiredAnchorAssignment ToDomain()
         {
@@ -1326,7 +1392,9 @@ public sealed class DesktopCommandDispatcher : IDesktopCommandDispatcher
                 teachingTeamLabel,
                 CourseName ?? string.Empty,
                 TeachingTeamKey ?? string.Empty,
-                teachingTeamLabel);
+                teachingTeamLabel,
+                LockedLhpCode ?? string.Empty,
+                LockedTeachingUnitKey ?? string.Empty);
         }
     }
 

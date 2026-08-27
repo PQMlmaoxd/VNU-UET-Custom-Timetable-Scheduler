@@ -129,6 +129,24 @@ public static class TimetableValidator
             }
 
             var choice = pairChoices[0];
+            if (!string.IsNullOrWhiteSpace(pairSpec.DesiredAssignment.LockedLhpCode))
+            {
+                var lockHonored =
+                    string.Equals(choice.LhpCode, pairSpec.DesiredAssignment.LockedLhpCode, StringComparison.Ordinal) &&
+                    (string.IsNullOrWhiteSpace(pairSpec.DesiredAssignment.LockedTeachingUnitKey) ||
+                     string.Equals(choice.TeachingUnitKey, pairSpec.DesiredAssignment.LockedTeachingUnitKey, StringComparison.Ordinal));
+                if (!lockHonored)
+                {
+                    violations.Add(new ConstraintViolation(
+                        "PT-8",
+                        "locked_lhp_not_respected",
+                        $"Chosen LHP '{choice.LhpCode}' does not honor the locked class section '{pairSpec.DesiredAssignment.LockedLhpCode}' for {pairKey.CourseCode} + {pairKey.TeachingTeam}.",
+                        choice.SessionIds,
+                        $"request={pairKey.CourseCode}::{pairKey.TeachingTeam} lhp={choice.LhpCode}"));
+                    continue;
+                }
+            }
+
             var unknownSessionIds = choice.SessionIds
                 .Where(sessionId => !sessions.ContainsKey(sessionId))
                 .ToImmutableArray();

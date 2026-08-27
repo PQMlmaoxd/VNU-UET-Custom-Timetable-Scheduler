@@ -93,6 +93,51 @@ public sealed class PersonalSelectionBuilderTests
     }
 
     [Fact]
+    public void BuildFiltersCandidatesToTheLockedClassSection()
+    {
+        var problem = Problem(
+            Session("row_30", "LHP-B", Networks, LecturerA, 30),
+            Session("row_20", "LHP-A", Networks, LecturerA, 20),
+            Session("row_40", "LHP-C", Networks, LecturerB, 40));
+
+        var unrestricted = PersonalSelectionBuilder.Build(
+            problem,
+            ImmutableArray.Create(new DesiredAnchorAssignment(Networks.Code, LecturerA.Name)));
+        var unrestrictedPair = Assert.Single(unrestricted.Pairs);
+        Assert.Equal(2, unrestrictedPair.Candidates.Length);
+        var lockedTarget = unrestrictedPair.Candidates.Single(candidate => candidate.LhpCode == "LHP-A");
+
+        var specification = PersonalSelectionBuilder.Build(
+            problem,
+            ImmutableArray.Create(new DesiredAnchorAssignment(
+                Networks.Code,
+                LecturerA.Name,
+                LockedLhpCode: "LHP-A",
+                LockedTeachingUnitKey: lockedTarget.TeachingUnitKey)));
+
+        var pair = Assert.Single(specification.Pairs);
+        var candidate = Assert.Single(pair.Candidates);
+        Assert.Equal("LHP-A", candidate.LhpCode);
+        Assert.Equal(lockedTarget.TeachingUnitKey, candidate.TeachingUnitKey);
+    }
+
+    [Fact]
+    public void BuildThrowsWhenLockedClassSectionIsMissing()
+    {
+        var problem = Problem(Session("row_10", "LHP-A", Networks, LecturerA, 10));
+
+        var exception = Assert.Throws<ArgumentException>(() => PersonalSelectionBuilder.Build(
+            problem,
+            ImmutableArray.Create(new DesiredAnchorAssignment(
+                Networks.Code,
+                LecturerA.Name,
+                LockedLhpCode: "LHP-Z",
+                LockedTeachingUnitKey: "unit:missing"))));
+
+        Assert.Contains("Locked class section 'LHP-Z'", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildBundlesCoTaughtSessionsAcrossTransitivelyConnectedCohorts()
     {
         var cohortOne = new StudentCohort("K1");

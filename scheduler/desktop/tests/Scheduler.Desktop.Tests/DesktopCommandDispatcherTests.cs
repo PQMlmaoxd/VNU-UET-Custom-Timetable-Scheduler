@@ -196,6 +196,194 @@ public sealed class DesktopCommandDispatcherTests : IDisposable
     }
 
     [Fact]
+    public async Task ValidateWorkbookReturnsAnchorCandidatesForEveryCourseTeamPair()
+    {
+        var workbookPath = CreateWorkbook();
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            workbook = new
+            {
+                file_name = "fixture.xlsx",
+                bytes_base64 = Convert.ToBase64String(await File.ReadAllBytesAsync(workbookPath)),
+            },
+        });
+
+        var result = await new DesktopCommandDispatcher().DispatchAsync(
+            "validate_workbook",
+            payload,
+            CancellationToken.None);
+
+        Assert.Equal(JsonValueKind.Array, result.GetProperty("anchor_candidates").ValueKind);
+        var group = result.GetProperty("anchor_candidates")[0];
+        Assert.Equal("INT1000", group.GetProperty("course_code").GetString());
+        Assert.StartsWith("team:", group.GetProperty("teaching_team_key").GetString());
+        Assert.Equal("Alice", group.GetProperty("teaching_team_label").GetString());
+        var candidate = group.GetProperty("candidates")[0];
+        Assert.Equal("LHP-1", candidate.GetProperty("lhp_code").GetString());
+        Assert.StartsWith("unit:", candidate.GetProperty("teaching_unit_key").GetString());
+        Assert.Equal(1, candidate.GetProperty("session_count").GetInt32());
+        Assert.Equal(1, candidate.GetProperty("slots").GetArrayLength());
+        var slot = candidate.GetProperty("slots")[0];
+        Assert.Equal(JsonValueKind.Number, slot.GetProperty("day").ValueKind);
+        Assert.False(string.IsNullOrWhiteSpace(slot.GetProperty("period_code").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(slot.GetProperty("timeslot_label").GetString()));
+    }
+
+    [Fact]
+    public async Task SolveWorkbookHonorsLockedClassSection()
+    {
+        var workbookPath = CreateWorkbook();
+        var validatePayload = JsonSerializer.SerializeToElement(new
+        {
+            workbook = new
+            {
+                file_name = "fixture.xlsx",
+                bytes_base64 = Convert.ToBase64String(await File.ReadAllBytesAsync(workbookPath)),
+            },
+        });
+        var validated = await new DesktopCommandDispatcher().DispatchAsync(
+            "validate_workbook",
+            validatePayload,
+            CancellationToken.None);
+        var candidate = validated.GetProperty("anchor_candidates")[0].GetProperty("candidates")[0];
+
+        var solvePayload = JsonSerializer.SerializeToElement(new
+        {
+            workbook = new
+            {
+                file_name = "fixture.xlsx",
+                bytes_base64 = Convert.ToBase64String(await File.ReadAllBytesAsync(workbookPath)),
+            },
+            desired_assignments = new[]
+            {
+                new
+                {
+                    course_code = "INT1000",
+                    course_name = "Programming",
+                    teaching_team_label = "Alice",
+                    locked_lhp_code = candidate.GetProperty("lhp_code").GetString(),
+                    locked_teaching_unit_key = candidate.GetProperty("teaching_unit_key").GetString(),
+                },
+            },
+            timeout_seconds = 30,
+        });
+
+        var result = await new DesktopCommandDispatcher(static () => new SatisfyingSolver()).DispatchAsync(
+            "solve_workbook",
+            solvePayload,
+            CancellationToken.None);
+
+        Assert.Equal("SAT", result.GetProperty("solver").GetProperty("satisfiability").GetString());
+        Assert.Equal("LHP-1", result.GetProperty("solutions")[0].GetProperty("desired_assignments")[0]
+            .GetProperty("lhp_codes")[0].GetString());
+    }
+
+    [Theory]
+    [InlineData("LHP-999")]
+    [InlineData(null)]
+    public async Task SolveWorkbookRejectsUnknownLockedClassSection(string? lockedLhpCode)
+    {
+        var workbookPath = CreateWorkbook();
+        var validatePayload = JsonSerializer.SerializeToElement(new
+        {
+            workbook = new
+            {
+                file_name = "fixture.xlsx",
+                bytes_base64 = Convert.ToBase64String(await File.ReadAllBytesAsync(workbookPath)),
+            },
+        });
+        var validated = await new DesktopCommandDispatcher().DispatchAsync(
+            "validate_workbook",
+            validatePayload,
+            CancellationToken.None);
+        var realUnitKey = validated.GetProperty("anchor_candidates")[0].GetProperty("candidates")[0]
+            .GetProperty("teaching_unit_key").GetString();
+        var solverCalled = false;
+        var dispatcher = new DesktopCommandDispatcher(() =>
+        {
+            solverCalled = true;
+            return new SatisfyingSolver();
+        });
+
+        var assignment = new JsonObject
+        {
+            ["course_code"] = "INT1000",
+            ["course_name"] = "Programming",
+            ["teaching_team_label"] = "Alice",
+            ["locked_lhp_code"] = lockedLhpCode ?? "LHP-1",
+            ["locked_teaching_unit_key"] = lockedLhpCode is null ? "unit:not-in-catalog" : realUnitKey,
+        };
+        var solvePayload = JsonSerializer.SerializeToElement(new
+        {
+            workbook = new
+            {
+                file_name = "fixture.xlsx",
+                bytes_base64 = Convert.ToBase64String(await File.ReadAllBytesAsync(workbookPath)),
+            },
+            desired_assignments = new JsonArray(assignment),
+            timeout_seconds = 30,
+        });
+
+        var exception = await Assert.ThrowsAsync<DesktopBridgeException>(() => dispatcher.DispatchAsync(
+            "solve_workbook",
+            solvePayload,
+            CancellationToken.None));
+
+        Assert.Contains("khóa", exception.Message, StringComparison.Ordinal);
+        Assert.False(solverCalled);
+    }
+
+    [Theory]
+    [InlineData("missing_unit_key", "Khóa lớp học phần không hợp lệ.")]
+    [InlineData("missing_lhp_code", "Khóa lớp học phần không hợp lệ.")]
+    [InlineData("malformed_characters", "Khóa lớp học phần chứa ký tự không được hỗ trợ.")]
+    [InlineData("too_long", "Khóa lớp học phần vượt quá giới hạn cho phép.")]
+    public async Task SolveWorkbookRejectsInvalidLockPayloads(string scenario, string expectedMessage)
+    {
+        var workbookPath = CreateWorkbook();
+        var assignment = new JsonObject
+        {
+            ["course_code"] = "INT1000",
+            ["course_name"] = "Programming",
+            ["teaching_team_label"] = "Alice",
+        };
+        switch (scenario)
+        {
+            case "missing_unit_key":
+                assignment["locked_lhp_code"] = "LHP-1";
+                break;
+            case "missing_lhp_code":
+                assignment["locked_teaching_unit_key"] = "unit:abc";
+                break;
+            case "malformed_characters":
+                assignment["locked_lhp_code"] = "\uFFFD";
+                assignment["locked_teaching_unit_key"] = "unit:abc";
+                break;
+            case "too_long":
+                assignment["locked_lhp_code"] = "LHP-1";
+                assignment["locked_teaching_unit_key"] = $"unit:{new string('a', 520)}";
+                break;
+        }
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            workbook = new
+            {
+                file_name = "fixture.xlsx",
+                bytes_base64 = Convert.ToBase64String(await File.ReadAllBytesAsync(workbookPath)),
+            },
+            desired_assignments = new JsonArray(assignment),
+            timeout_seconds = 30,
+        });
+
+        var exception = await Assert.ThrowsAsync<DesktopBridgeException>(() => new DesktopCommandDispatcher().DispatchAsync(
+            "solve_workbook",
+            payload,
+            CancellationToken.None));
+
+        Assert.Equal(expectedMessage, exception.Message);
+    }
+
+    [Fact]
     public async Task SaveTimetableWritesVersionedSatDocumentAtomically()
     {
         var destination = Path.Combine(temporaryDirectory, "saved-timetable.json");

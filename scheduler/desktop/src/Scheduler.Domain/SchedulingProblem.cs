@@ -9,11 +9,16 @@ public sealed record DesiredAnchorAssignment(
     string LecturerName,
     string CourseName = "",
     string TeachingTeamKey = "",
-    string TeachingTeamLabel = "")
+    string TeachingTeamLabel = "",
+    string LockedLhpCode = "",
+    string LockedTeachingUnitKey = "")
 {
     public string DisplayTeachingTeam => string.IsNullOrWhiteSpace(TeachingTeamLabel)
         ? LecturerName
         : TeachingTeamLabel;
+
+    public bool HasLockedLhp =>
+        !string.IsNullOrWhiteSpace(LockedLhpCode) || !string.IsNullOrWhiteSpace(LockedTeachingUnitKey);
 }
 
 public sealed record SchedulingProblem(

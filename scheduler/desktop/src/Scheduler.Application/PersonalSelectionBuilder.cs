@@ -62,6 +62,25 @@ public static class PersonalSelectionBuilder
             .Select(unit => new SelectionCandidate(unit.LhpCode, unit.SessionIds, unit.Key))
             .ToImmutableArray();
 
+        if (desiredAssignment.HasLockedLhp && !candidates.IsEmpty)
+        {
+            candidates = candidates
+                .Where(candidate =>
+                    (string.IsNullOrWhiteSpace(desiredAssignment.LockedLhpCode)
+                        || string.Equals(candidate.LhpCode, desiredAssignment.LockedLhpCode, StringComparison.Ordinal))
+                    && (string.IsNullOrWhiteSpace(desiredAssignment.LockedTeachingUnitKey)
+                        || string.Equals(candidate.TeachingUnitKey, desiredAssignment.LockedTeachingUnitKey, StringComparison.Ordinal)))
+                .ToImmutableArray();
+
+            if (candidates.IsEmpty)
+            {
+                throw new ArgumentException(
+                    $"Locked class section '{desiredAssignment.LockedLhpCode}' is no longer offered by teaching team " +
+                    $"'{desiredAssignment.DisplayTeachingTeam}' for course '{desiredAssignment.CourseCode}'.",
+                    nameof(desiredAssignment));
+            }
+        }
+
         if (!candidates.IsEmpty)
         {
             return new SelectionPairSpec(canonicalAssignment, candidates);

@@ -194,6 +194,50 @@ public sealed class TimetableValidatorTests
     }
 
     [Fact]
+    public void ValidatePersonalTimetableRejectsChoiceViolatingLockedLhp()
+    {
+        var session = Session("s1", "LHP1", CourseA, SessionType.Lt, LecturerA, CohortA, Monday1, Room105B);
+        var problem = Problem(session);
+        var schedule = Schedule(session, Assignment(session, Monday1, Room105B));
+        var lockedAssignment = new DesiredAnchorAssignment(
+            CourseA.Code,
+            LecturerA.Name,
+            CourseA.Name,
+            LockedLhpCode: "LHP2",
+            LockedTeachingUnitKey: "unit:locked");
+        var spec = Specification(new SelectionPairSpec(
+            lockedAssignment,
+            ImmutableArray.Create(new SelectionCandidate("LHP2", ImmutableArray.Create("s1")))));
+        var choices = ImmutableArray.Create(Choice(CourseA, LecturerA, "LHP1", "s1", Monday1));
+
+        var result = TimetableValidator.ValidatePersonalTimetable(schedule, problem, spec, choices);
+
+        AssertViolation(result, "PT-8");
+    }
+
+    [Fact]
+    public void ValidatePersonalTimetableAcceptsLockedLhpWhenHonored()
+    {
+        var session = Session("s1", "LHP1", CourseA, SessionType.Lt, LecturerA, CohortA, Monday1, Room105B);
+        var problem = Problem(session);
+        var schedule = Schedule(session, Assignment(session, Monday1, Room105B));
+        var lockedAssignment = new DesiredAnchorAssignment(
+            CourseA.Code,
+            LecturerA.Name,
+            CourseA.Name,
+            LockedLhpCode: "LHP1",
+            LockedTeachingUnitKey: string.Empty);
+        var spec = Specification(new SelectionPairSpec(
+            lockedAssignment,
+            ImmutableArray.Create(new SelectionCandidate("LHP1", ImmutableArray.Create("s1")))));
+        var choices = ImmutableArray.Create(Choice(CourseA, LecturerA, "LHP1", "s1", Monday1));
+
+        var result = TimetableValidator.ValidatePersonalTimetable(schedule, problem, spec, choices);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
     public void ValidatePersonalTimetableRejectsForgedCandidatesAndDuplicatePairs()
     {
         var session = Session("s1", "LHP1", CourseA, SessionType.Lt, LecturerA, CohortA, Monday1, Room105B);

@@ -30,7 +30,55 @@ public static class DesktopResponseMapper
             parseResult.Problem.Department,
             CreateParseSummary(parseResult, anchors, 0),
             new PrototypeCatalog(anchors, CreateRoomCostRules()),
-            CreateValidationSummary(validation));
+            CreateValidationSummary(validation),
+            CreateAnchorCandidates(parseResult.Problem));
+    }
+
+    private static ImmutableArray<AnchorCandidateGroup> CreateAnchorCandidates(SchedulingProblem problem)
+    {
+        var catalog = TeachingUnitCatalog.Create(problem);
+        return catalog.Units
+            .GroupBy(unit => (unit.CourseCode, unit.TeachingTeamKey, unit.TeachingTeamLabel))
+            .OrderBy(group => group.Key.CourseCode, StringComparer.Ordinal)
+            .ThenBy(group => group.Key.TeachingTeamKey, StringComparer.Ordinal)
+            .ThenBy(group => group.Key.TeachingTeamLabel, StringComparer.Ordinal)
+            .Select(group => new AnchorCandidateGroup(
+                group.Key.CourseCode,
+                group.Key.TeachingTeamKey,
+                group.Key.TeachingTeamLabel,
+                group
+                    .OrderBy(unit => unit.LhpCode, StringComparer.Ordinal)
+                    .ThenBy(unit => unit.Key, StringComparer.Ordinal)
+                    .Select(unit => new AnchorLhpCandidate(
+                        unit.LhpCode,
+                        unit.Key,
+                        unit.Sessions.Length,
+                        unit.Sessions
+                            .OrderBy(session => AnchorSlotOrder(session))
+                            .ThenBy(session => session.SourceRow)
+                            .Select(CreateAnchorCandidateSlot)
+                            .ToImmutableArray()))
+                    .ToImmutableArray()))
+            .ToImmutableArray();
+    }
+
+    private static int AnchorSlotOrder(Session session) =>
+        session.TimeSlot is null
+            ? 99
+            : ((int)session.TimeSlot.Day * 10) + session.TimeSlot.Period.ToAtomicPeriods().Min();
+
+    private static AnchorCandidateSlot CreateAnchorCandidateSlot(Session session)
+    {
+        var timeSlot = session.TimeSlot;
+        var isOnline = session.SessionType == SessionType.Onl;
+        var timeSlotLabel = isOnline
+            ? timeSlot is null ? "Online" : $"{timeSlot} (Online)"
+            : timeSlot?.ToString() ?? "Unassigned";
+
+        return new AnchorCandidateSlot(
+            timeSlot is null ? null : (int)timeSlot.Day,
+            timeSlot?.Period.ToWorkbookValue(),
+            timeSlotLabel);
     }
 
     public static RescheduleResponse CreateSolveResponse(
@@ -261,7 +309,25 @@ public static class DesktopResponseMapper
         [property: JsonPropertyName("department")] string Department,
         [property: JsonPropertyName("parse_summary")] ParseSummary ParseSummary,
         [property: JsonPropertyName("prototype_catalog")] PrototypeCatalog PrototypeCatalog,
-        [property: JsonPropertyName("existing_schedule_validation")] ValidationSummary ExistingScheduleValidation);
+        [property: JsonPropertyName("existing_schedule_validation")] ValidationSummary ExistingScheduleValidation,
+        [property: JsonPropertyName("anchor_candidates")] ImmutableArray<AnchorCandidateGroup> AnchorCandidates);
+
+    public sealed record AnchorCandidateGroup(
+        [property: JsonPropertyName("course_code")] string CourseCode,
+        [property: JsonPropertyName("teaching_team_key")] string TeachingTeamKey,
+        [property: JsonPropertyName("teaching_team_label")] string TeachingTeamLabel,
+        [property: JsonPropertyName("candidates")] ImmutableArray<AnchorLhpCandidate> Candidates);
+
+    public sealed record AnchorLhpCandidate(
+        [property: JsonPropertyName("lhp_code")] string LhpCode,
+        [property: JsonPropertyName("teaching_unit_key")] string TeachingUnitKey,
+        [property: JsonPropertyName("session_count")] int SessionCount,
+        [property: JsonPropertyName("slots")] ImmutableArray<AnchorCandidateSlot> Slots);
+
+    public sealed record AnchorCandidateSlot(
+        [property: JsonPropertyName("day")] int? Day,
+        [property: JsonPropertyName("period_code")] string? PeriodCode,
+        [property: JsonPropertyName("timeslot_label")] string TimeslotLabel);
 
     public sealed record RescheduleResponse(
         [property: JsonPropertyName("mode")] string Mode,
