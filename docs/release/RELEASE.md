@@ -109,8 +109,9 @@ signing and CakeLPR evidence are release-hardening options, not application
 runtime requirements.
 
 A manual release can be started from **Actions > Release Windows Desktop > Run
-workflow** by supplying `version`, `webview2_installer_url` and
-`webview2_sha256`. Manual input values override repository variables.
+workflow** with the required `version` and existing annotated `tag` inputs. Optional
+`webview2_installer_url` and `webview2_sha256` inputs override the corresponding
+repository variables when supplied.
 
 ## Release Assets
 

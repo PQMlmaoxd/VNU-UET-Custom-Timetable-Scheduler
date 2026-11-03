@@ -140,8 +140,8 @@ succeeds.
 ### Debug diagnostic package
 
 The manual **Windows Debug Solver Diagnostics** workflow creates a separate,
-self-contained `win-x64` Debug artifact. It does not create a GitHub Release or change
-the production `v0.1.0` package. The artifact contains the WPF host, React bundle,
+self-contained `win-x64` Debug artifact. It does not create a GitHub Release or modify
+any tagged release package. The artifact contains the WPF host, React bundle,
 native worker, and direct SAT/UNSAT diagnostics.
 
 To build it from the GitHub Actions page, open **Actions > Windows Debug Solver
